@@ -1,70 +1,42 @@
 import { Tabs } from "expo-router";
-import { Text } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#b9c4b9",
-        tabBarInactiveTintColor: "#b9c4b9",
         tabBarStyle: {
-          height: 65,
-          paddingBottom: 8,
-          paddingTop: 8,
+          display: "none",
         },
       }}
     >
       <Tabs.Screen
-  name="index"
-  options={{
-    title: "Home",
-    tabBarIcon: ({ color, size }) => (
-      <Ionicons name="home-outline" size={size} color={color} />
-    ),
-  }}
-/>
+        name="index"
+        options={{
+          title: "Home",
+        }}
+      />
 
       <Tabs.Screen
-  name="products"
-  options={{
-    title: "Products",
-    tabBarIcon: ({ color, size }) => (
-      <Ionicons name="bag-outline" size={size} color={color} />
-    ),
-  }}
-/>
+        name="products"
+        options={{
+          title: "Products",
+        }}
+      />
 
       <Tabs.Screen
-  name="appointment"
-  options={{
-    title: "Appointment",
-    tabBarIcon: ({ color, size }) => (
-      <Ionicons name="calendar-outline" size={size} color={color} />
-    ),
-  }}
-/>
-
-     <Tabs.Screen
-  name="therapies"
-  options={{
-    title: "Therapies",
-    tabBarIcon: ({ color, size }) => (
-      <Ionicons name="leaf-outline" size={size} color={color} />
-    ),
-  }}
-/>
+        name="therapies"
+        options={{
+          title: "Therapies",
+        }}
+      />
 
       <Tabs.Screen
-  name="profile"
-  options={{
-    title: "Profile",
-    tabBarIcon: ({ color, size }) => (
-      <Ionicons name="person-outline" size={size} color={color} />
-    ),
-  }}
-/>
+        name="profile"
+        options={{
+          title: "Profile",
+        }}
+      />
     </Tabs>
   );
 }

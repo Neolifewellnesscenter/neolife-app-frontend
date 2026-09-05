@@ -1,1030 +1,1899 @@
-import { useEffect, useRef, useState } from "react";
-import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
+
 import {
   Animated,
-  Dimensions,
-  FlatList,
   Image,
   ImageBackground,
   Linking,
-  Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 
-const { width } = Dimensions.get("window");
+import { API_BASE_URL } from "../../services/api";
+import PatientDrawer from "../../components/PatientDrawer";
+import PatientHeader from "../../components/PatientHeader";
 
-const products = [
+const GREEN = "#0B3D2E";
+const GREEN_2 = "#14533D";
+const MINT = "#EAF5EF";
+const GOLD = "#D6B45B";
+const GOLD_LIGHT = "#F4E6B7";
+const CREAM = "#FBFAF6";
+const TEXT = "#17231D";
+const MUTED = "#75837B";
+const WHITE = "#FFFFFF";
+
+const heroSlides = [
   {
-    name: "NeoPainil Capsule",
-    desc: "Supports joint comfort and mobility.",
-    qty: "60 Capsules",
-    image: require("../../assets/images/neo-painil.jpg"),
+    id: "1",
+    image: require("../../assets/images/neolife.png"),
+    kicker: "HOLISTIC WELLNESS IN UDUPI",
+    title: "Feel Better.\nLive Naturally.",
+    text:
+      "Personalized Ayurveda, Panchakarma, Yoga, Naturopathy and wellness care in one place.",
   },
   {
-    name: "Neodia Kashayam",
-    desc: "Supports healthy blood sugar management.",
-    qty: "500 ml",
-    image: require("../../assets/images/neodia-kashayam.jpg"),
+    id: "2",
+    image: require("../../assets/images/ayurvedapancha.png"),
+    kicker: "TRADITIONAL HEALING",
+    title: "Restore Your\nBody Naturally",
+    text:
+      "Discover time-tested therapies designed for detoxification, pain relief and rejuvenation.",
   },
   {
-    name: "Neo9 KH Syrup",
-    desc: "Supports urinary and kidney wellness.",
-    qty: "300 ml",
-    image: require("../../assets/images/NEO9-KH.jpeg"),
+    id: "3",
+    image: require("../../assets/images/yoga.jpg"),
+    kicker: "MIND • BODY • BALANCE",
+    title: "Your Wellness\nJourney Starts Here",
+    text:
+      "Expert-guided therapies to help you move better, feel calmer and live healthier.",
+  },
+];
+
+const quickActions = [
+  {
+    title: "Book",
+    subtitle: "Consultation",
+    icon: "calendar-outline",
+    route: "/consultation",
+  },
+  {
+    title: "Shop",
+    subtitle: "Products",
+    icon: "bag-outline",
+    route: "/(tabs)/products",
+  },
+  {
+    title: "Explore",
+    subtitle: "Therapies",
+    icon: "leaf-outline",
+    route: "/therapies",
+  },
+  {
+    title: "Meet",
+    subtitle: "Doctors",
+    icon: "medical-outline",
+    route: "/doctors",
+  },
+];
+
+const benefits = [
+  {
+    icon: "leaf-outline",
+    title: "Natural Healing",
+    text: "Traditional therapies focused on root-cause wellness.",
+  },
+  {
+    icon: "person-outline",
+    title: "Personalized Care",
+    text: "Guidance tailored to your individual health needs.",
+  },
+  {
+    icon: "shield-checkmark-outline",
+    title: "Trusted Experts",
+    text: "Care from experienced doctors and wellness professionals.",
   },
 ];
 
 const therapies = [
-  { icon: "leaf-outline", title: "Ayurveda" },
-  { icon: "pulse-outline", title: "Acupuncture" },
-  { icon: "flower-outline", title: "Naturopathy" },
-  { icon: "body-outline", title: "Yoga" },
-  { icon: "medkit-outline", title: "Panchakarma" },
-  { icon: "sparkles-outline", title: "Beauty & Cosmetics" },
+  {
+    title: "Ayurveda & Panchakarma",
+    subtitle: "Detox • Rejuvenate • Restore",
+    icon: "leaf-outline",
+    routeTitle: "Panchakarma",
+  },
+  {
+    title: "Acupuncture",
+    subtitle: "Pain • Stress • Balance",
+    icon: "pulse-outline",
+    routeTitle: "Acupuncture",
+  },
+  {
+    title: "Yoga Therapy",
+    subtitle: "Strength • Mobility • Calm",
+    icon: "body-outline",
+    routeTitle: "Yoga",
+  },
+  {
+    title: "Naturopathy",
+    subtitle: "Lifestyle • Diet • Healing",
+    icon: "flower-outline",
+    routeTitle: "Naturopathy",
+  },
+  {
+    title: "Beauty & Cosmetics",
+    subtitle: "Skin • Brows • Lips",
+    icon: "sparkles-outline",
+    routeTitle: "Beauty & Cosmetics",
+  },
 ];
 
 const doctors = [
   {
     name: "Dr. N. G. Muraleedhara",
-    degree: "BAMS",
-    spec: "Ayurveda & Panchakarma Consultant",
+    qualification: "BNYS | PGDYN | MSc(Yoga)",
+    specialty: "Yoga & Naturopathy Consultant",
     image: require("../../assets/images/doctors/Dr-murali.png"),
   },
   {
-    name: "Dr. Aditi",
-    degree: "BNYS",
-    spec: "Yoga & Naturopathy Consultant",
-    image: require("../../assets/images/doctors/Dr-adithi.png"),
-  },
-  {
-    name: "Dr. Sibagath Ulla Sharieff R",
-    degree: "BAMS, MD(Ayu)",
-    spec: "Ayurveda Consultant",
-    image: require("../../assets/images/doctors/Dr-sibgath.jpg"),
+    name: "Dr. G Rajesh Rao",
+    qualification: "BAMS",
+    specialty: "Jyothishya Vidwan | Ayurveda",
+    image: require("../../assets/images/doctors/Dr-rajesh.png"),
   },
   {
     name: "Dr. Vijay B. Negalur",
-    degree: "MD(Ayu), PhD",
-    spec: "Lifestyle Wellness Expert",
+    qualification: "BAMS, M.D. (Swasthavritta)",
+    specialty: "Ayurveda | Diet & Lifestyle Consultant",
     image: require("../../assets/images/doctors/Dr-vijay.png"),
   },
   {
+    name: "Dr. Sibagath Ulla Sharieff R",
+    qualification: "BAMS, MD(Ayu)",
+    specialty: "Ayurveda Consultant",
+    image: require("../../assets/images/doctors/Dr-sibgath.jpg"),
+  },
+  {
     name: "Dr. Shalmali B B",
-    degree: "BAMS, MD(Ayu)",
-    spec: "Rasa Shastra & Bhaishajya Kalpana",
+    qualification: "BAMS, MD (Ayu)",
+    specialty: "Rasa Shastra & Bhaishajya Kalpana",
     image: require("../../assets/images/doctors/Dr-shalmali.png"),
   },
   {
-    name: "Dr. G Rajesh Rao",
-    degree: "BAMS",
-    spec: "Vidwan",
-    image: require("../../assets/images/doctors/Dr-rajesh.png"),
+    name: "Dr. Gajendar",
+    qualification: "BAMS",
+    specialty: "Naturopathy Consultant",
+    image: require("../../assets/images/doctors/Dr-gajendar.png"),
+  },
+  {
+    name: "Dr. D P Ramesh",
+    qualification: "BAMS | Ayurveda | Cancer Care",
+    specialty: "Ayurvedic cancer care support",
+    image: require("../../assets/images/doctors/Dr-ramesh.png"),
+  },
+  {
+    name: "Dr. Aditi",
+    qualification: "BNYS",
+    specialty: "Yoga & Naturopathy Consultant",
+    image: require("../../assets/images/doctors/Dr-adithi.png"),
+  },
+  {
+    name: "Dr. Harshitha AV",
+    qualification: "BAMS, MS (Shalyatantra)",
+    specialty: "Ayurvedic Surgeon | Ano-rectal Disorders | Varicose Veins | Women's Health & General Ayurvedic Care",
+    image: require("../../assets/images/doctors/Dr-Harshitha.png"),
   },
 ];
 
-const heroSlides = [
-  {
-    image: require("../../assets/images/neolife.png"),
-    badge: "🌿 Neolife Wellness Center",
-    title: "Ayurveda • Panchakarma • Yoga",
-    text: "Natural healing care for body, mind and lifestyle wellness.",
-  },
-  {
-    image: require("../../assets/images/ayurvedapancha.png"),
-    badge: "Traditional Healing",
-    title: "Panchakarma & Ayurvedic Therapies",
-    text: "Personalized detox and rejuvenation treatments.",
-  },
-  {
-    image: require("../../assets/images/yoga.jpg"),
-    badge: "Mind & Body Wellness",
-    title: "Yoga • Acupuncture • Naturopathy",
-    text: "Holistic care for stress relief and better living.",
-  },
-];
+type Offer = {
+  id?: number;
+  offerLabel?: string;
+  offerTitle?: string;
+  description?: string;
+  couponCode?: string;
+  discountText?: string;
+  buttonText?: string;
+  buttonLink?: string;
+  bannerImageUrl?: string;
+};
 
-const offerSlides = [
-  {
-    label: "🎉 Festival Offer",
-    title: "Diwali Wellness Offer",
-    text: "Flat 30% OFF on selected Ayurvedic products.",
-    code: "DIWALI30",
-    discount: "30%",
-  },
-  {
-    label: "🌿 Wellness Offer",
-    title: "Ayurvedic Product Offer",
-    text: "Special discount on Neoliv, Neo9 KH and Kashayam.",
-    code: "NEOLIFE20",
-    discount: "20%",
-  },
-];
-
-
+type Review = {
+  id?: number;
+  patientName?: string;
+  rating?: number;
+  therapyService?: string;
+  message?: string;
+  status?: string;
+};
 
 export default function HomeScreen() {
-  const therapyListRef = useRef<FlatList>(null);
-const therapyScrollX = useRef(0);
+  const { width } = useWindowDimensions();
 
-const movingTherapies = [...therapies, ...therapies, ...therapies];
+  const heroRef = useRef<ScrollView | null>(null);
+  const heroIndexRef = useRef(0);
 
-useEffect(() => {
-  const interval = setInterval(() => {
-    therapyScrollX.current += 1;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [offerIndex, setOfferIndex] = useState(0);
 
-    therapyListRef.current?.scrollToOffset({
-      offset: therapyScrollX.current,
-      animated: false,
-    });
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewIndex, setReviewIndex] = useState(0);
 
-    if (therapyScrollX.current > therapies.length * 150) {
-      therapyScrollX.current = 0;
-      therapyListRef.current?.scrollToOffset({
-        offset: 0,
-        animated: false,
-      });
-    }
-  }, 25);
+  
+  useEffect(() => {
+    loadOffers();
+    loadReviews();
+    
+  }, []);
 
-  return () => clearInterval(interval);
-}, []);
-  const sliderRef = useRef<FlatList>(null);
-const [activeSlide, setActiveSlide] = useState(0);
-const { width } = Dimensions.get("window");
+  
 
-useEffect(() => {
-  const interval = setInterval(() => {
-    const nextIndex =
-      activeSlide === heroSlides.length - 1 ? 0 : activeSlide + 1;
 
-    sliderRef.current?.scrollToIndex({
-      index: nextIndex,
-      animated: true,
-    });
-
-    setActiveSlide(nextIndex);
-  }, 3000);
-
-  return () => clearInterval(interval);
-}, [activeSlide]);
-
-  const [menuVisible, setMenuVisible] = useState(false);
-
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-    return (
-    <>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        <Animated.View
-          style={{
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-            paddingBottom: 35,
+    const timer = setInterval(() => {
+      const next =
+        (heroIndexRef.current + 1) % heroSlides.length;
+
+      heroIndexRef.current = next;
+
+      heroRef.current?.scrollTo({
+        x: next * width,
+        animated: true,
+      });
+    }, 4500);
+
+    return () => clearInterval(timer);
+  }, [width]);
+
+  useEffect(() => {
+    if (offers.length <= 1) return;
+
+    const timer = setInterval(() => {
+      setOfferIndex((current) =>
+        current >= offers.length - 1 ? 0 : current + 1
+      );
+    }, 4500);
+
+    return () => clearInterval(timer);
+  }, [offers]);
+
+  useEffect(() => {
+    if (reviews.length <= 1) return;
+
+    const timer = setInterval(() => {
+      setReviewIndex((current) =>
+        current >= reviews.length - 1 ? 0 : current + 1
+      );
+    }, 4500);
+
+    return () => clearInterval(timer);
+  }, [reviews]);
+
+  async function loadOffers() {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/offers/active/get`
+      );
+
+      const result = await response.json();
+
+      if (result?.success && Array.isArray(result?.data)) {
+        setOffers(result.data);
+      }
+    } catch (error) {
+      console.log("Offer loading failed:", error);
+    }
+  }
+
+  async function loadReviews() {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/clinic-reviews/getAll`,
+        {
+          headers: {
+            Accept: "application/json",
+          },
+        }
+      );
+
+      const result = await response.json();
+
+      if (result?.success && Array.isArray(result?.data)) {
+        const approved = result.data.filter(
+          (review: Review) => {
+            const status =
+              String(review.status || "").toUpperCase();
+
+            return !review.status || status === "APPROVED";
+          }
+        );
+
+        setReviews(approved);
+      }
+    } catch (error) {
+      console.log("Review loading failed:", error);
+    }
+  }
+
+  
+
+  function getOfferImage(url?: string) {
+    if (!url) {
+      return require("../../assets/images/neolife.png");
+    }
+
+    if (url.startsWith("http")) {
+      return { uri: url };
+    }
+
+    return {
+      uri: `${API_BASE_URL}${url}`,
+    };
+  }
+
+  async function openURL(url: string) {
+    try {
+      await Linking.openURL(url);
+    } catch (error) {
+      console.log("URL error:", error);
+    }
+  }
+
+  function openTherapy(title: string) {
+  if (title === "Beauty & Cosmetics") {
+    router.push("/beauty-cosmetics" as any);
+    return;
+  }
+
+  router.push({
+    pathname: "/therapy-details",
+    params: { title },
+  } as any);
+}
+
+  const currentOffer = offers[offerIndex];
+  const currentReview = reviews[reviewIndex];
+
+  return (
+    <View style={styles.screen}>
+      <PatientHeader
+  onMenuPress={() => setMenuOpen(true)}
+/>
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 0 }}
+      >
+        {/* HERO */}
+
+        <ScrollView
+          ref={heroRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(event) => {
+            heroIndexRef.current = Math.round(
+              event.nativeEvent.contentOffset.x / width
+            );
           }}
         >
-          <View style={styles.topHeader}>
-            <TouchableOpacity
-              style={styles.circleBtn}
-              onPress={() => setMenuVisible(true)}
+          {heroSlides.map((slide) => (
+            <ImageBackground
+              key={slide.id}
+              source={slide.image}
+              style={[styles.hero, { width }]}
             >
-              <Ionicons name="menu" size={28} color="#1B5E20" />
-            </TouchableOpacity>
+              <View style={styles.heroShade} />
 
-            <View style={styles.brandBox}>
-              <Image
-                source={require("../../assets/images/main_logo.jpeg")}
-                style={styles.headerLogo}
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.brand}>Neolife Wellness Center</Text>
-                <Text style={styles.subBrand}>Ayush Digital Care</Text>
+              <View style={styles.heroContent}>
+                <Text style={styles.heroKicker}>
+                  {slide.kicker}
+                </Text>
+
+                <Text style={styles.heroTitle}>
+                  {slide.title}
+                </Text>
+
+                <Text style={styles.heroText}>
+                  {slide.text}
+                </Text>
+
+                <View style={styles.heroButtons}>
+                  <TouchableOpacity
+                    style={styles.primaryHeroButton}
+                    onPress={() =>
+                      router.push("/consultation" as any)
+                    }
+                  >
+                    <Text style={styles.primaryHeroText}>
+                      Book Consultation
+                    </Text>
+
+                    <Ionicons
+                      name="arrow-forward"
+                      size={17}
+                      color={GREEN}
+                    />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.secondaryHeroButton}
+                    onPress={() =>
+                      router.push("/therapies" as any)
+                    }
+                  >
+                    <Text style={styles.secondaryHeroText}>
+                      Explore Therapies
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
+            </ImageBackground>
+          ))}
+        </ScrollView>
 
-          <TouchableOpacity
-  style={styles.circleBtn}
-  onPress={() => router.push("/notifications")}
->
-  <Ionicons
-    name="notifications"
-    size={24}
-    color="#D4AF37"
-  />
+        {/* QUICK ACTIONS */}
 
-  <View style={styles.badge}>
-    <Text style={styles.badgeText}>3</Text>
-  </View>
-</TouchableOpacity>
-          </View>
+        <View style={styles.quickWrap}>
+          {quickActions.map((item) => (
+            <TouchableOpacity
+              key={item.title}
+              style={styles.quickCard}
+              onPress={() =>
+                router.push(item.route as any)
+              }
+            >
+              <View style={styles.quickIcon}>
+                <Ionicons
+                  name={item.icon as any}
+                  size={22}
+                  color={GREEN}
+                />
+              </View>
 
-          <View style={styles.searchBox}>
-            <Ionicons name="search-outline" size={20} color="#777" />
-            <Text style={styles.searchText}>
-              Search products, therapies, doctors...
+              <Text style={styles.quickTitle}>
+                {item.title}
+              </Text>
+
+              <Text style={styles.quickSubtitle}>
+                {item.subtitle}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* PAIN POINT MARKETING */}
+
+        <View style={styles.marketingCard}>
+          <View style={styles.marketingBadge}>
+            <Ionicons
+              name="heart-outline"
+              size={15}
+              color={GOLD}
+            />
+
+            <Text style={styles.marketingBadgeText}>
+              FEELING TIRED, STRESSED OR IN PAIN?
             </Text>
           </View>
 
-          <FlatList
-            data={offerSlides}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(item) => item.title}
-            renderItem={({ item }) => (
-              <View style={styles.sliderPage}>
-                <View style={styles.offer}>
-                  <View style={styles.offerLeft}>
-                    <Text style={styles.offerLabel}>{item.label}</Text>
-                    <Text style={styles.offerTitle}>{item.title}</Text>
-                    <Text style={styles.offerText}>{item.text}</Text>
-                    <Text style={styles.code}>Use Code: {item.code}</Text>
-
-                    <TouchableOpacity style={styles.shopBtn}>
-                      <Text style={styles.shopBtnText}>Shop Now ›</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.discountBadge}>
-                    <Text style={styles.discountText}>{item.discount}</Text>
-                    <Text style={styles.discountSmall}>OFF</Text>
-                  </View>
-                </View>
-              </View>
-            )}
-          />
-
-          <FlatList
-  ref={sliderRef}
-  data={heroSlides}
-  horizontal
-  pagingEnabled
-  showsHorizontalScrollIndicator={false}
-  keyExtractor={(item) => item.title}
-  onMomentumScrollEnd={(event) => {
-    const index = Math.round(
-      event.nativeEvent.contentOffset.x / width
-    );
-    setActiveSlide(index);
-  }}
-  renderItem={({ item }) => (
-    <View style={styles.sliderPage}>
-      <ImageBackground
-        source={item.image}
-        style={styles.hero}
-        imageStyle={styles.heroImage}
-      >
-        <View style={styles.overlay}>
-          <Text style={styles.heroBadge}>{item.badge}</Text>
-
-          <Text style={styles.heroTitle}>
-            {item.title}
+          <Text style={styles.marketingTitle}>
+            Don’t ignore what your body is telling you.
           </Text>
 
-          <Text style={styles.heroText}>
-            {item.text}
+          <Text style={styles.marketingText}>
+            Whether it is joint pain, digestive discomfort,
+            stress, poor sleep or lifestyle imbalance, the
+            right wellness support can help you feel better.
           </Text>
 
-         
+          <TouchableOpacity
+            style={styles.marketingButton}
+            onPress={() =>
+              router.push("/consultation" as any)
+            }
+          >
+            <Text style={styles.marketingButtonText}>
+              Talk to a Wellness Expert
+            </Text>
+
+            <Ionicons
+              name="arrow-forward"
+              size={16}
+              color={WHITE}
+            />
+          </TouchableOpacity>
         </View>
-      </ImageBackground>
-    </View>
-  )}
-/>
 
-          <View style={styles.sectionRow}>
-            <Text style={styles.sectionTitle}>Our Featured Products</Text>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/products")}>
-              <Text style={styles.viewAll}>View All ›</Text>
-            </TouchableOpacity>
-          </View>
+        {/* OFFER */}
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontal}
-          >
-            {products.map((item) => (
-              <View key={item.name} style={styles.websiteProductCard}>
-                <Image source={item.image} style={styles.websiteProductImage} />
-                <Text style={styles.websiteProductName}>{item.name}</Text>
-                <Text style={styles.websiteProductDesc}>{item.desc}</Text>
-                <Text style={styles.websiteProductQty}>{item.qty}</Text>
-              </View>
-            ))}
-          </ScrollView>
+        {currentOffer && (
+          <View style={styles.sectionPad}>
+            <ImageBackground
+              source={getOfferImage(
+                currentOffer.bannerImageUrl
+              )}
+              style={styles.offerCard}
+              imageStyle={{
+                borderRadius: 28,
+              }}
+            >
+              <View style={styles.offerShade} />
 
-          
+              <View style={styles.offerContent}>
+                <Text style={styles.offerMini}>
+                  {currentOffer.offerLabel ||
+                    "LIMITED TIME OFFER"}
+                </Text>
 
-         <Section title="Our Wellness Therapies" showViewAll={false} />
+                <Text style={styles.offerTitle}>
+                  {currentOffer.offerTitle}
+                </Text>
 
-<FlatList
-  ref={therapyListRef}
-  data={movingTherapies}
-  horizontal
-  showsHorizontalScrollIndicator={false}
-  keyExtractor={(item, index) => `${item.title}-${index}`}
-  scrollEnabled={false}
-  contentContainerStyle={styles.therapyMarquee}
-  renderItem={({ item }) => (
-    <View style={styles.therapyBrandCard}>
-      <Ionicons name={item.icon as any} size={26} color="#1B5E20" />
-      <Text style={styles.therapyBrandText}>{item.title}</Text>
-    </View>
-  )}
-/>
+                {!!currentOffer.description && (
+                  <Text style={styles.offerText}>
+                    {currentOffer.description}
+                  </Text>
+                )}
 
-          <Section title="Our Doctors ✚" showViewAll={false} />
+                {!!currentOffer.discountText && (
+                  <View style={styles.discountBadge}>
+                    <Text style={styles.discountText}>
+                      {currentOffer.discountText}
+                    </Text>
+                  </View>
+                )}
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontal}
-          >
-            {doctors.map((doctor) => (
-              <View style={styles.doctorCard} key={doctor.name}>
-                <Image source={doctor.image} style={styles.doctorPhoto} />
-                <Text style={styles.doctorName}>{doctor.name}</Text>
-                <Text style={styles.degree}>{doctor.degree}</Text>
-                <Text style={styles.spec}>{doctor.spec}</Text>
-                <Text style={styles.rating}>⭐⭐⭐⭐⭐ 4.9</Text>
+                {!!currentOffer.couponCode && (
+                  <Text style={styles.couponText}>
+                    Use code: {currentOffer.couponCode}
+                  </Text>
+                )}
 
-                <TouchableOpacity style={styles.bookDoctorBtn}>
-                  <Text style={styles.bookDoctorText}>View Profile</Text>
+                <TouchableOpacity
+                  style={styles.offerButton}
+                  onPress={() =>
+                    router.push(
+                      "/(tabs)/products" as any
+                    )
+                  }
+                >
+                  <Text style={styles.offerButtonText}>
+                    {currentOffer.buttonText ||
+                      "Explore Now"}
+                  </Text>
                 </TouchableOpacity>
               </View>
-            ))}
-          </ScrollView>
+            </ImageBackground>
+          </View>
+        )}
 
-          <View style={styles.cta}>
+        {/* THERAPIES */}
+
+        <SectionTitle
+          eyebrow="DISCOVER WELLNESS"
+          title="Choose What Your Body Needs"
+          text="Explore trusted therapies designed around your health goals."
+        />
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalList}
+        >
+          {therapies.map((therapy) => (
+            <TouchableOpacity
+              key={therapy.title}
+              style={styles.therapyCard}
+              onPress={() =>
+                openTherapy(therapy.routeTitle)
+              }
+            >
+              <View style={styles.therapyIcon}>
+                <Ionicons
+                  name={therapy.icon as any}
+                  size={25}
+                  color={WHITE}
+                />
+              </View>
+
+              <Text style={styles.therapyTitle}>
+                {therapy.title}
+              </Text>
+
+              <Text style={styles.therapySub}>
+                {therapy.subtitle}
+              </Text>
+
+              <View style={styles.cardLink}>
+                <Text style={styles.cardLinkText}>
+                  Know more
+                </Text>
+
+                <Ionicons
+                  name="arrow-forward"
+                  size={14}
+                  color={GOLD}
+                />
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* WHY US */}
+
+        <SectionTitle
+          eyebrow="WHY NEOLIFE"
+          title="Wellness Care Made Personal"
+          text="Everything you need to feel supported throughout your wellness journey."
+        />
+
+        <View style={styles.benefitsWrap}>
+          {benefits.map((item) => (
+            <View
+              key={item.title}
+              style={styles.benefitCard}
+            >
+              <View style={styles.benefitIcon}>
+                <Ionicons
+                  name={item.icon as any}
+                  size={23}
+                  color={GREEN}
+                />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.benefitTitle}>
+                  {item.title}
+                </Text>
+
+                <Text style={styles.benefitText}>
+                  {item.text}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        {/* DOCTORS */}
+
+        <SectionTitle
+          eyebrow="EXPERT CARE"
+          title="Meet Your Wellness Team"
+          text="Experienced professionals here to guide you."
+        />
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalList}
+        >
+          {doctors.map((doctor, index) => (
+            <AnimatedDoctorCard
+              key={doctor.name}
+              doctor={doctor}
+              index={index}
+            />
+          ))}
+        </ScrollView>
+
+        <View style={styles.meetDoctorsWrap}>
+          <TouchableOpacity
+            style={styles.meetDoctorsButton}
+            activeOpacity={0.85}
+            onPress={() => router.push("/doctors" as any)}
+          >
+            <View style={styles.meetDoctorsIcon}>
+              <Ionicons name="people-outline" size={20} color={GREEN} />
+            </View>
+
             <View style={{ flex: 1 }}>
-              <Text style={styles.ctaTitle}>Need Health Guidance?</Text>
-              <Text style={styles.ctaText}>
-                Talk to our wellness experts today.
+              <Text style={styles.meetDoctorsButtonText}>Meet Our Doctors</Text>
+              <Text style={styles.meetDoctorsButtonSub}>
+                Discover our complete wellness team
               </Text>
             </View>
 
-            <TouchableOpacity style={styles.contactBtn}>
-              <Text style={styles.contactText}>Contact Us</Text>
+            <Ionicons name="arrow-forward" size={19} color={GREEN} />
+          </TouchableOpacity>
+        </View>
+
+        {/* BEAUTY SPOTLIGHT */}
+
+        <View style={styles.beautyCard}>
+          <View style={styles.beautyTextWrap}>
+            <Text style={styles.beautyKicker}>
+              BEAUTY & SELF CARE
+            </Text>
+
+            <Text style={styles.beautyTitle}>
+              Glow Naturally.
+              Feel Confident.
+            </Text>
+
+            <Text style={styles.beautyText}>
+              Discover personalized facial, hair, eyebrow,
+              lip and beauty treatments.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.beautyButton}
+              onPress={() =>
+                openTherapy(
+                  "Beauty & Cosmetics"
+                )
+              }
+            >
+              <Text style={styles.beautyButtonText}>
+                Explore Beauty Care
+              </Text>
             </TouchableOpacity>
           </View>
-        </Animated.View>
-      </ScrollView>
 
-      <Modal
-        visible={menuVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setMenuVisible(false)}
-      >
-        <View style={styles.drawerOverlay}>
-  <View style={styles.drawer}>
+          <Image
+            source={require("../../assets/images/facial.png")}
+            style={styles.beautyImage}
+          />
+        </View>
+
+        {/* REVIEWS */}
+
+        {currentReview && (
+          <View style={styles.reviewSection}>
+            <Text style={styles.reviewKicker}>
+              REAL PATIENT STORIES
+            </Text>
+
+            <Text style={styles.reviewTitle}>
+              Trusted by People Like You
+            </Text>
+
+            <View style={styles.reviewCard}>
+              <Text style={styles.quoteMark}>“</Text>
+
+              <Text style={styles.reviewMessage}>
+                {currentReview.message}
+              </Text>
+
+              <View style={styles.reviewBottom}>
+                <View>
+                  <Text style={styles.reviewName}>
+                    {currentReview.patientName ||
+                      "Patient"}
+                  </Text>
+
+                  <Text style={styles.reviewService}>
+                    {currentReview.therapyService ||
+                      "NeoLife Wellness Center"}
+                  </Text>
+                </View>
+
+                <Text style={styles.reviewStars}>
+                  {"★".repeat(
+                    Math.max(
+                      1,
+                      Math.min(
+                        5,
+                        Number(
+                          currentReview.rating || 5
+                        )
+                      )
+                    )
+                  )}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* CTA */}
+
+        <View style={styles.finalCta}>
+          <View style={styles.finalIcon}>
+            <Ionicons
+              name="heart"
+              size={24}
+              color={GOLD}
+            />
+          </View>
+
+          <Text style={styles.finalTitle}>
+            Ready to Start Feeling Better?
+          </Text>
+
+          <Text style={styles.finalText}>
+            Book a consultation today and take the first
+            step toward better health and wellness.
+          </Text>
+
+          <TouchableOpacity
+            style={styles.finalButton}
+            onPress={() =>
+              router.push("/consultation" as any)
+            }
+          >
+            <Text style={styles.finalButtonText}>
+              Book Consultation
+            </Text>
+
+            <Ionicons
+              name="arrow-forward"
+              size={17}
+              color={GREEN}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* CONTACT */}
+
+        <View style={styles.contactCard}>
+          <Text style={styles.contactKicker}>
+            VISIT NEOLIFE
+          </Text>
+
+          <Text style={styles.contactTitle}>
+            NeoLife Wellness Center
+          </Text>
+
+          <Text style={styles.contactText}>
+            4-1-38 Nararkere 1st Cross, Brahmagiri,
+            Ambalpadi, Udupi, Karnataka 576101
+          </Text>
+
+          <View style={styles.contactButtons}>
+            <TouchableOpacity
+              style={styles.contactOutline}
+              onPress={() =>
+                openURL("tel:9036444282")
+              }
+            >
+              <Ionicons
+                name="call-outline"
+                size={17}
+                color={GREEN}
+              />
+
+              <Text style={styles.contactOutlineText}>
+                Call
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.contactFilled}
+              onPress={() =>
+                openURL(
+                  "https://www.google.com/maps/search/?api=1&query=Neolife+Wellness+Center+Udupi"
+                )
+              }
+            >
+              <Ionicons
+                name="navigate-outline"
+                size={17}
+                color={WHITE}
+              />
+
+              <Text style={styles.contactFilledText}>
+                Directions
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        {/* CONTACT / FOOTER */}
+<View style={styles.footer}>
+  <Image
+    source={require("../../assets/images/main_logo.jpeg")}
+    style={styles.footerLogo}
+  />
+
+  <Text style={styles.footerBrand}>
+    NeoLife Wellness Center
+  </Text>
+
+  <Text style={styles.footerTagline}>
+    Natural healing, Ayurvedic care and trusted wellness support
+    for a healthier life.
+  </Text>
+
+  <TouchableOpacity
+    style={styles.footerRow}
+    onPress={() =>
+      openURL("tel:+919481489866")
+    }
+  >
+    <Ionicons
+      name="call-outline"
+      size={17}
+      color={GOLD}
+    />
+
+    <Text style={styles.footerText}>
+      +91 94814 89866
+    </Text>
+  </TouchableOpacity>
+
+  <TouchableOpacity
+    style={styles.footerRow}
+    onPress={() =>
+      openURL("mailto:neelavar.murali@gmail.com")
+    }
+  >
+    <Ionicons
+      name="mail-outline"
+      size={17}
+      color={GOLD}
+    />
+
+    <Text style={styles.footerText}>
+      neelavar.murali@gmail.com
+    </Text>
+  </TouchableOpacity>
+
+  <Text style={styles.footerAddress}>
+    4-1-38, Behind Lions Bhavan Road, Nairkere 1st Cross,
+    Brahmagiri, Ambalapady Post, Udupi – 576103,
+    Karnataka, India
+  </Text>
+
+  <View style={styles.socialRow}>
+    <TouchableOpacity
+      style={styles.socialButton}
+      onPress={() =>
+        openURL(
+          "https://www.facebook.com/profile.php?id=61575580360517"
+        )
+      }
+    >
+      <Ionicons
+        name="logo-facebook"
+        size={20}
+        color={WHITE}
+      />
+    </TouchableOpacity>
 
     <TouchableOpacity
-      style={styles.closeIcon}
-      onPress={() => setMenuVisible(false)}
+      style={styles.socialButton}
+      onPress={() =>
+        openURL(
+          "https://www.instagram.com/neolives_global"
+        )
+      }
     >
-      <Ionicons name="close" size={30} color="#1B5E20" />
-    </TouchableOpacity>
-
-    <View style={styles.drawerHeader}>
-      <Image
-        source={require("../../assets/images/main_logo.jpeg")}
-        style={styles.drawerLogo}
+      <Ionicons
+        name="logo-instagram"
+        size={20}
+        color={WHITE}
       />
-      <Text style={styles.drawerTitle}>Neolife Wellness Center</Text>
-      <Text style={styles.drawerSubtitle}>Your Health, Our Priority</Text>
-    </View>
-
-    <DrawerItem
-      icon="home-outline"
-      title="Home"
-      onPress={() => {
-        setMenuVisible(false);
-        router.replace("/(tabs)");
-      }}
-    />
-
-    <DrawerItem
-      icon="information-circle-outline"
-      title="About Us"
-      onPress={() => {
-        setMenuVisible(false);
-        router.push("/about");
-      }}
-    />
-
-    <DrawerItem
-      icon="medkit-outline"
-      title="Our Doctors"
-      onPress={() => {
-        setMenuVisible(false);
-        router.push("/doctors");
-      }}
-    />
-
-    <DrawerItem
-      icon="leaf-outline"
-      title="Therapies"
-      onPress={() => {
-        setMenuVisible(false);
-        router.push("/(tabs)/therapies");
-      }}
-    />
-
-    <DrawerItem
-      icon="bag-outline"
-      title="Products"
-      onPress={() => {
-        setMenuVisible(false);
-        router.push("/(tabs)/products");
-      }}
-    />
-
-    <DrawerItem
-      icon="calendar-outline"
-      title="Book Appointment"
-      onPress={() => {
-        setMenuVisible(false);
-        router.push("/(tabs)/appointment");
-      }}
-    />
-
-    <DrawerItem
-      icon="call-outline"
-      title="Contact Us"
-      onPress={() => {
-        setMenuVisible(false);
-        router.push("/contact");
-      }}
-    />
-
-    <DrawerItem
-      icon="logo-whatsapp"
-      title="WhatsApp Support"
-      onPress={() => {
-        setMenuVisible(false);
-        Linking.openURL("https://wa.me/919481489866");
-      }}
-    />
-
-    <DrawerItem
-      icon="settings-outline"
-      title="Settings"
-      onPress={() => {
-        setMenuVisible(false);
-        router.push("/settings");
-      }}
-    />
-
-           
-  </View>
-</View>
-  </Modal>
-</>
-);
-}
-
-function Section({
-  title,
-  showViewAll = true,
-}: {
-  title: string;
-  showViewAll?: boolean;
-}) {
-  return (
-    <View style={styles.sectionRow}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-
-      {showViewAll && (
-        <Text style={styles.viewAll}>View All ›</Text>
-      )}
-    </View>
-  );
-}
-
-function DrawerItem({
-  icon,
-  title,
-  onPress,
-}: {
-  icon: any;
-  title: string;
-  onPress?: () => void;
-}) {
-  return (
-    <TouchableOpacity style={styles.drawerItem} onPress={onPress}>
-      <Ionicons name={icon} size={22} color="#1B5E20" />
-      <Text style={styles.drawerItemText}>{title}</Text>
     </TouchableOpacity>
+
+    <TouchableOpacity
+      style={styles.socialButton}
+      onPress={() =>
+        openURL(
+          "https://www.youtube.com/@NeolifeWellnessCenterUdupi-o7x"
+        )
+      }
+    >
+      <Ionicons
+        name="logo-youtube"
+        size={20}
+        color={WHITE}
+      />
+    </TouchableOpacity>
+
+    <TouchableOpacity
+      style={styles.socialButton}
+      onPress={() =>
+        openURL("https://wa.me/919481489866")
+      }
+    >
+      <Ionicons
+        name="logo-whatsapp"
+        size={20}
+        color={WHITE}
+      />
+    </TouchableOpacity>
+  </View>
+
+  <Text style={styles.copyright}>
+    © 2026 NeoLife Wellness Center. All Rights Reserved.
+  </Text>
+</View>
+</ScrollView>
+      
+
+      {/* WHATSAPP */}
+
+      <TouchableOpacity
+        style={styles.whatsapp}
+        onPress={() =>
+          openURL(
+            "https://wa.me/919036444282?text=Hello%20NeoLife%20Wellness%20Center,%20I%20need%20help."
+          )
+        }
+      >
+        <Ionicons
+          name="logo-whatsapp"
+          size={27}
+          color={WHITE}
+        />
+      </TouchableOpacity>
+
+      <PatientDrawer
+  visible={menuOpen}
+  onClose={() => setMenuOpen(false)}
+  activeRoute="/(tabs)"
+/>
+    </View>
   );
 }
+
+function AnimatedDoctorCard({
+  doctor,
+  index,
+}: {
+  doctor: (typeof doctors)[number];
+  index: number;
+}) {
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.sequence([
+      Animated.delay(Math.min(index, 4) * 90),
+      Animated.spring(progress, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 7,
+        tension: 55,
+      }),
+    ]);
+
+    animation.start();
+    return () => animation.stop();
+  }, [index, progress]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.doctorCard,
+        {
+          opacity: progress,
+          transform: [
+            {
+              translateY: progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [24, 0],
+              }),
+            },
+            {
+              scale: progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.96, 1],
+              }),
+            },
+          ],
+        },
+      ]}
+    >
+      <Image source={doctor.image} style={styles.doctorImage} />
+
+      <Text style={styles.doctorName}>{doctor.name}</Text>
+      <Text style={styles.doctorQualification}>{doctor.qualification}</Text>
+      <Text style={styles.doctorSpecialty}>{doctor.specialty}</Text>
+    </Animated.View>
+  );
+}
+
+function SectionTitle({
+  eyebrow,
+  title,
+  text,
+}: {
+  eyebrow: string;
+  title: string;
+  text: string;
+}) {
+  return (
+    <View style={styles.sectionTitleWrap}>
+      <Text style={styles.eyebrow}>
+        {eyebrow}
+      </Text>
+
+      <Text style={styles.sectionTitle}>
+        {title}
+      </Text>
+
+      <Text style={styles.sectionText}>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  therapyMarquee: {
-  paddingLeft: 20,
-  paddingRight: 20,
-},
-
-therapyBrandCard: {
-  width: 140,
-  height: 82,
-  backgroundColor: "#ffffff",
-  borderRadius: 18,
-  marginRight: 16,
-  justifyContent: "center",
-  alignItems: "center",
-  elevation: 4,
-},
-
-therapyBrandText: {
-  color: "#064b16",
-  fontSize: 14,
-  fontWeight: "bold",
-  marginTop: 8,
-  textAlign: "center",
-},
-  badge: {
-  position: "absolute",
-  top: -2,
-  right: -2,
-  width: 18,
-  height: 18,
-  borderRadius: 9,
-  backgroundColor: "#E53935",
-  justifyContent: "center",
-  alignItems: "center",
-},
-
-badgeText: {
-  color: "#fff",
-  fontSize: 10,
-  fontWeight: "bold",
-},
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: "#fbfff9",
-  },
-  sliderPage: {
-    width,
+    backgroundColor: CREAM,
   },
 
-  topHeader: {
-    paddingTop: 55,
-    paddingHorizontal: 18,
-    paddingBottom: 15,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  circleBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 24,
-    backgroundColor: "#ffffff",
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 4,
-  },
-  brandBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    marginHorizontal: 10,
-    gap: 8,
-  },
-  headerLogo: {
-    width: 55,
-    height: 55,
-    borderRadius: 28,
-  },
-  brand: {
-    color: "#064b16",
-    fontWeight: "bold",
-    fontSize: 17,
-  },
-  subBrand: {
-    color: "#555",
-    fontSize: 12,
-    marginTop: 2,
-  },
-
-  searchBox: {
-    marginHorizontal: 18,
-    marginBottom: 15,
-    backgroundColor: "#ffffff",
-    borderRadius: 30,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    elevation: 4,
-    gap: 10,
-  },
-  searchText: {
-    color: "#777",
-    fontSize: 14,
-  },
-
-  offer: {
-    marginHorizontal: 18,
-    backgroundColor: "#fff1c7",
-    borderRadius: 20,
-    padding: 17,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    elevation: 5,
-  },
-  offerLeft: {
-    width: "68%",
-  },
-  offerLabel: {
-    backgroundColor: "#c0392b",
-    color: "#fff",
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    fontWeight: "bold",
-    fontSize: 12,
-  },
-  offerTitle: {
-    color: "#5c240c",
-    fontSize: 23,
-    fontWeight: "bold",
-    marginTop: 12,
-  },
-  offerText: {
-    color: "#5c240c",
-    marginTop: 6,
-    lineHeight: 19,
-  },
-  code: {
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: "#c0392b",
-    padding: 8,
-    borderRadius: 10,
-    color: "#9b2c18",
-    fontWeight: "bold",
-    alignSelf: "flex-start",
-  },
-  shopBtn: {
-    marginTop: 12,
-    backgroundColor: "#1B5E20",
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 10,
-    alignSelf: "flex-start",
-  },
-  shopBtnText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-  discountBadge: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: "#b32113",
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 32,
-  },
-  discountText: {
-    color: "#fff",
-    fontSize: 25,
-    fontWeight: "bold",
-  },
-  discountSmall: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
+  
 
   hero: {
-    marginHorizontal: 18,
-    marginTop: 18,
-    borderRadius: 22,
-    minHeight: 230,
-    overflow: "hidden",
-    elevation: 6,
-  },
-  heroImage: {
-    borderRadius: 22,
-  },
-  overlay: {
-    flex: 1,
+    height: 545,
     justifyContent: "flex-end",
-    padding: 22,
-    backgroundColor: "rgba(0,0,0,0.42)",
   },
-  heroBadge: {
-    backgroundColor: "rgba(255,255,255,0.20)",
-    color: "#fff",
-    alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    fontWeight: "bold",
+
+  heroShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(4,31,22,.59)",
   },
+
+  heroContent: {
+    paddingHorizontal: 22,
+    paddingBottom: 62,
+  },
+
+  heroKicker: {
+    color: GOLD_LIGHT,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.8,
+  },
+
   heroTitle: {
-    color: "#fff",
-    fontSize: 25,
-    fontWeight: "bold",
-    marginTop: 14,
+    marginTop: 12,
+    color: WHITE,
+    fontSize: 42,
+    lineHeight: 45,
+    fontWeight: "900",
+    letterSpacing: -1.4,
   },
+
   heroText: {
-    color: "#e8f5e9",
+    marginTop: 15,
+    maxWidth: 360,
+    color: "#E5EFEA",
     fontSize: 15,
-    marginTop: 9,
-    lineHeight: 22,
+    lineHeight: 23,
   },
+
   heroButtons: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 18,
-    flexWrap: "wrap",
-  },
-  bookBtn: {
-    backgroundColor: "#2eaf43",
-    paddingVertical: 11,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-  },
-  bookText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-  exploreBtn: {
-    borderWidth: 1,
-    borderColor: "#fff",
-    paddingVertical: 11,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-  },
-  exploreText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-
-  sectionRow: {
     marginTop: 24,
-    marginHorizontal: 20,
-    marginBottom: 12,
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  sectionTitle: {
-    color: "#064b16",
-    fontSize: 21,
-    fontWeight: "bold",
-  },
-  viewAll: {
-    color: "#0b7a24",
-    fontWeight: "bold",
-  },
-  horizontal: {
-    paddingLeft: 20,
-    paddingRight: 10,
+    flexWrap: "wrap",
+    gap: 10,
   },
 
-  websiteProductCard: {
-    width: 220,
-    backgroundColor: "#ffffff",
-    borderRadius: 22,
-    padding: 16,
-    marginRight: 18,
-    elevation: 5,
+  primaryHeroButton: {
+    minHeight: 49,
+    flexDirection: "row",
     alignItems: "center",
-  },
-  websiteProductImage: {
-    width: "100%",
-    height: 145,
-    borderRadius: 18,
-    resizeMode: "cover",
-    marginBottom: 14,
-  },
-  websiteProductName: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#1B5E20",
-    textAlign: "center",
-  },
-  websiteProductDesc: {
-    color: "#555",
-    fontSize: 14,
-    textAlign: "center",
-    marginTop: 10,
-    lineHeight: 21,
-  },
-  websiteProductQty: {
-    color: "#333",
-    fontSize: 14,
-    marginTop: 14,
+    gap: 7,
+    paddingHorizontal: 18,
+    borderRadius: 16,
+    backgroundColor: GOLD,
   },
 
-  therapyItem: {
-    width: 105,
-    alignItems: "center",
-    marginRight: 18,
+  primaryHeroText: {
+    color: GREEN,
+    fontWeight: "900",
+    fontSize: 13,
   },
-  therapyIconBox: {
-    width: 88,
-    height: 74,
-    borderRadius: 18,
-    backgroundColor: "#e8f5e9",
+
+  secondaryHeroButton: {
+    minHeight: 49,
     justifyContent: "center",
+    paddingHorizontal: 17,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,.4)",
+  },
+
+  secondaryHeroText: {
+    color: WHITE,
+    fontWeight: "800",
+    fontSize: 13,
+  },
+
+  quickWrap: {
+    marginTop: -27,
+    marginHorizontal: 15,
+    padding: 10,
+    flexDirection: "row",
+    borderRadius: 24,
+    backgroundColor: WHITE,
+    elevation: 8,
+  },
+
+  quickCard: {
+    flex: 1,
     alignItems: "center",
+    paddingVertical: 10,
+  },
+
+  quickIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: MINT,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  quickTitle: {
+    marginTop: 7,
+    color: GREEN,
+    fontWeight: "900",
+    fontSize: 12,
+  },
+
+  quickSubtitle: {
+    marginTop: 1,
+    color: MUTED,
+    fontSize: 9,
+  },
+
+  marketingCard: {
+    marginTop: 48,
+    marginHorizontal: 16,
+    padding: 24,
+    borderRadius: 28,
+    backgroundColor: GREEN,
+  },
+
+  marketingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  marketingBadgeText: {
+    color: GOLD_LIGHT,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+  },
+
+  marketingTitle: {
+    marginTop: 12,
+    color: WHITE,
+    fontSize: 27,
+    lineHeight: 32,
+    fontWeight: "900",
+    letterSpacing: -0.6,
+  },
+
+  marketingText: {
+    marginTop: 11,
+    color: "#CEDDD5",
+    lineHeight: 21,
+    fontSize: 13,
+  },
+
+  marketingButton: {
+    marginTop: 20,
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    backgroundColor: GREEN_2,
+    paddingHorizontal: 17,
+    paddingVertical: 12,
+    borderRadius: 15,
+  },
+
+  marketingButtonText: {
+    color: WHITE,
+    fontWeight: "800",
+    fontSize: 12,
+  },
+
+  sectionPad: {
+    marginTop: 50,
+    paddingHorizontal: 16,
+  },
+
+  offerCard: {
+    minHeight: 320,
+    justifyContent: "flex-end",
+    overflow: "hidden",
+    borderRadius: 28,
+  },
+
+  offerShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(12,51,38,.72)",
+  },
+
+  offerContent: {
+    padding: 24,
+  },
+
+  offerMini: {
+    color: GOLD_LIGHT,
+    fontWeight: "900",
+    fontSize: 10,
+    letterSpacing: 1.3,
+  },
+
+  offerTitle: {
+    marginTop: 9,
+    color: WHITE,
+    fontWeight: "900",
+    fontSize: 28,
+    lineHeight: 32,
+  },
+
+  offerText: {
+    marginTop: 9,
+    color: "#E5EFEA",
+    lineHeight: 20,
+  },
+
+  discountBadge: {
+    alignSelf: "flex-start",
+    marginTop: 13,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 12,
+    backgroundColor: GOLD,
+  },
+
+  discountText: {
+    color: GREEN,
+    fontSize: 17,
+    fontWeight: "900",
+  },
+
+  couponText: {
+    marginTop: 10,
+    color: WHITE,
+    fontWeight: "700",
+  },
+
+  offerButton: {
+    marginTop: 16,
+    alignSelf: "flex-start",
+    backgroundColor: WHITE,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+
+  offerButtonText: {
+    color: GREEN,
+    fontWeight: "900",
+  },
+
+  sectionTitleWrap: {
+    marginTop: 62,
+    paddingHorizontal: 20,
+  },
+
+  eyebrow: {
+    color: GOLD,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+  },
+
+  sectionTitle: {
+    marginTop: 8,
+    color: TEXT,
+    fontSize: 27,
+    lineHeight: 32,
+    fontWeight: "900",
+    letterSpacing: -0.6,
+  },
+
+  sectionText: {
+    marginTop: 7,
+    color: MUTED,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+
+  horizontalList: {
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 8,
+    gap: 13,
+  },
+
+  therapyCard: {
+    width: 210,
+    minHeight: 196,
+    padding: 19,
+    borderRadius: 24,
+    backgroundColor: WHITE,
     elevation: 3,
   },
+
   therapyIcon: {
-    fontSize: 33,
+    width: 52,
+    height: 52,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: GREEN,
   },
+
   therapyTitle: {
-    textAlign: "center",
-    fontWeight: "bold",
-    marginTop: 9,
-    color: "#111",
-    fontSize: 13,
+    marginTop: 15,
+    color: TEXT,
+    fontWeight: "900",
+    fontSize: 16,
+    lineHeight: 20,
+  },
+
+  therapySub: {
+    marginTop: 6,
+    color: MUTED,
+    fontSize: 11,
+  },
+
+  cardLink: {
+    marginTop: "auto",
+    paddingTop: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+
+  cardLinkText: {
+    color: GOLD,
+    fontWeight: "900",
+    fontSize: 11,
+  },
+
+  benefitsWrap: {
+    marginTop: 20,
+    paddingHorizontal: 16,
+    gap: 11,
+  },
+
+  benefitCard: {
+    flexDirection: "row",
+    gap: 14,
+    padding: 17,
+    borderRadius: 20,
+    backgroundColor: WHITE,
+  },
+
+  benefitIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    backgroundColor: MINT,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  benefitTitle: {
+    color: TEXT,
+    fontWeight: "900",
+    fontSize: 15,
+  },
+
+  benefitText: {
+    marginTop: 4,
+    color: MUTED,
+    lineHeight: 18,
+    fontSize: 12,
   },
 
   doctorCard: {
-    width: width * 0.5,
-    backgroundColor: "#fff",
-    borderRadius: 18,
-    padding: 14,
-    marginRight: 14,
-    elevation: 4,
-  },
-  doctorPhoto: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    alignSelf: "center",
-    marginBottom: 12,
-    borderWidth: 3,
-    borderColor: "#1B5E20",
-  },
-  doctorName: {
-    color: "#111",
-    fontWeight: "bold",
-    fontSize: 14,
-    textAlign: "center",
-  },
-  degree: {
-    color: "#1B5E20",
-    fontWeight: "bold",
-    marginTop: 5,
-    fontSize: 12,
-    textAlign: "center",
-  },
-  spec: {
-    color: "#555",
-    marginTop: 5,
-    fontSize: 12,
-    textAlign: "center",
-  },
-  rating: {
-    marginTop: 8,
-    color: "#f2a900",
-    fontSize: 12,
-    textAlign: "center",
-  },
-  bookDoctorBtn: {
-    marginTop: 12,
-    backgroundColor: "#1B5E20",
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  bookDoctorText: {
-    color: "#fff",
-    textAlign: "center",
-    fontWeight: "bold",
+    width: 235,
+    padding: 18,
+    borderRadius: 25,
+    alignItems: "center",
+    backgroundColor: WHITE,
+    elevation: 3,
   },
 
-  cta: {
-    margin: 20,
-    backgroundColor: "#0b7a24",
-    borderRadius: 18,
-    padding: 18,
+  doctorImage: {
+    width: 118,
+    height: 118,
+    borderRadius: 59,
+    backgroundColor: MINT,
+  },
+
+  doctorName: {
+    marginTop: 14,
+    textAlign: "center",
+    color: TEXT,
+    fontWeight: "900",
+    fontSize: 16,
+  },
+
+  doctorQualification: {
+    marginTop: 5,
+    textAlign: "center",
+    color: GOLD,
+    fontWeight: "800",
+    fontSize: 11,
+  },
+
+  doctorSpecialty: {
+    marginTop: 5,
+    color: MUTED,
+    fontSize: 11,
+    textAlign: "center",
+  },
+
+
+
+  meetDoctorsWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 18,
+  },
+
+  meetDoctorsButton: {
+    minHeight: 72,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+    backgroundColor: GOLD_LIGHT,
+    borderWidth: 1,
+    borderColor: "#E4CC83",
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-  },
-  ctaTitle: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 17,
-  },
-  ctaText: {
-    color: "#e8f5e9",
-    marginTop: 5,
-  },
-  contactBtn: {
-    backgroundColor: "#fff",
-    paddingVertical: 11,
-    paddingHorizontal: 15,
-    borderRadius: 25,
-  },
-  contactText: {
-    color: "#1B5E20",
-    fontWeight: "bold",
+    gap: 12,
   },
 
-  drawerOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
-  },
-  drawer: {
-    width: "80%",
-    height: "100%",
-    backgroundColor: "#ffffff",
-    paddingTop: 45,
-    paddingHorizontal: 18,
-  },
-  drawerHeader: {
-    backgroundColor: "#1B5E20",
-    borderRadius: 22,
-    padding: 20,
+  meetDoctorsIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 15,
+    backgroundColor: WHITE,
     alignItems: "center",
-    marginBottom: 20,
+    justifyContent: "center",
   },
-  drawerLogo: {
-    width: 85,
-    height: 85,
-    borderRadius: 43,
-    marginBottom: 10,
+
+  meetDoctorsButtonText: {
+    color: GREEN,
+    fontSize: 14,
+    fontWeight: "900",
   },
-  drawerTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
-    textAlign: "center",
+
+  meetDoctorsButtonSub: {
+    marginTop: 2,
+    color: "#6F684F",
+    fontSize: 10,
+    lineHeight: 14,
   },
-  drawerSubtitle: {
-    color: "#dcedc8",
-    marginTop: 5,
+
+  beautyCard: {
+    marginTop: 62,
+    marginHorizontal: 16,
+    borderRadius: 28,
+    overflow: "hidden",
+    backgroundColor: "#F7EFE8",
+  },
+
+  beautyTextWrap: {
+    padding: 23,
+  },
+
+  beautyKicker: {
+    color: "#9B6D45",
+    fontWeight: "900",
+    fontSize: 10,
+    letterSpacing: 1.4,
+  },
+
+  beautyTitle: {
+    marginTop: 9,
+    color: "#513928",
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: "900",
+  },
+
+  beautyText: {
+    marginTop: 9,
+    color: "#806B5C",
+    lineHeight: 20,
     fontSize: 13,
   },
-  drawerItem: {
+
+  beautyButton: {
+    marginTop: 17,
+    alignSelf: "flex-start",
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 13,
+    backgroundColor: "#513928",
+  },
+
+  beautyButtonText: {
+    color: WHITE,
+    fontWeight: "800",
+    fontSize: 12,
+  },
+
+  beautyImage: {
+    width: "100%",
+    height: 220,
+    resizeMode: "cover",
+  },
+
+  reviewSection: {
+    marginTop: 62,
+    paddingVertical: 45,
+    paddingHorizontal: 16,
+    backgroundColor: GREEN,
+  },
+
+  reviewKicker: {
+    color: GOLD_LIGHT,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+  },
+
+  reviewTitle: {
+    marginTop: 8,
+    color: WHITE,
+    fontSize: 28,
+    fontWeight: "900",
+  },
+
+  reviewCard: {
+    marginTop: 20,
+    padding: 21,
+    borderRadius: 23,
+    backgroundColor: "rgba(255,255,255,.09)",
+  },
+
+  quoteMark: {
+    color: GOLD,
+    fontSize: 45,
+    lineHeight: 45,
+  },
+
+  reviewMessage: {
+    marginTop: 2,
+    color: WHITE,
+    lineHeight: 22,
+    fontSize: 14,
+  },
+
+  reviewBottom: {
+    marginTop: 20,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+
+  reviewName: {
+    color: WHITE,
+    fontWeight: "900",
+  },
+
+  reviewService: {
+    marginTop: 3,
+    color: "#C6D7CE",
+    fontSize: 10,
+  },
+
+  reviewStars: {
+    color: GOLD,
+  },
+
+  finalCta: {
+    marginTop: 60,
+    marginHorizontal: 16,
+    padding: 28,
+    alignItems: "center",
+    borderRadius: 28,
+    backgroundColor: GREEN,
+  },
+
+  finalIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 17,
+    backgroundColor: "rgba(255,255,255,.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  finalTitle: {
+    marginTop: 15,
+    color: WHITE,
+    textAlign: "center",
+    fontSize: 26,
+    fontWeight: "900",
+  },
+
+  finalText: {
+    marginTop: 9,
+    color: "#CEDDD5",
+    textAlign: "center",
+    lineHeight: 20,
+  },
+
+  finalButton: {
+    marginTop: 19,
+    minHeight: 48,
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eef3ee",
+    gap: 7,
+    paddingHorizontal: 20,
+    borderRadius: 15,
+    backgroundColor: GOLD,
   },
-  drawerItemText: {
-    marginLeft: 14,
-    fontSize: 16,
-    color: "#333",
-    fontWeight: "600",
+
+  finalButtonText: {
+    color: GREEN,
+    fontWeight: "900",
   },
-  closeBtn: {
-    marginTop: 25,
-    backgroundColor: "#1B5E20",
-    padding: 13,
+
+  contactCard: {
+    marginTop: 35,
+    marginHorizontal: 16,
+    padding: 23,
     borderRadius: 25,
+    backgroundColor: WHITE,
+  },
+
+  contactKicker: {
+    color: GOLD,
+    fontWeight: "900",
+    fontSize: 10,
+    letterSpacing: 1.2,
+  },
+
+  contactTitle: {
+    marginTop: 7,
+    color: TEXT,
+    fontSize: 20,
+    fontWeight: "900",
+  },
+
+  contactText: {
+    marginTop: 7,
+    color: MUTED,
+    lineHeight: 19,
+    fontSize: 12,
+  },
+
+  contactButtons: {
+    marginTop: 17,
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  contactOutline: {
+    flex: 1,
+    minHeight: 45,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: GREEN,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
   },
-  closeText: {
-    color: "#fff",
-    fontWeight: "bold",
+
+  contactOutlineText: {
+    color: GREEN,
+    fontWeight: "800",
   },
-  closeIcon: {
-  position: "absolute",
-  top: 45,
-  right: 15,
-  width: 44,
-  height: 44,
-  borderRadius: 22,
-  backgroundColor: "#ffffff",
-  justifyContent: "center",
+
+  contactFilled: {
+    flex: 1,
+    minHeight: 45,
+    borderRadius: 14,
+    backgroundColor: GREEN,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+
+  contactFilledText: {
+    color: WHITE,
+    fontWeight: "800",
+  },
+
+  footer: {
+  marginTop: 58,
+  paddingTop: 42,
+  paddingBottom: 34,
+  paddingHorizontal: 22,
   alignItems: "center",
-  elevation: 8,      // Android
-  zIndex: 999,       // Keep above all views
-  shadowColor: "#000",
-  shadowOpacity: 0.25,
-  shadowRadius: 6,
-  shadowOffset: {
-    width: 0,
-    height: 3,
-  },
+  backgroundColor: "#0A271A",
 },
+
+footerLogo: {
+  width: 62,
+  height: 62,
+  borderRadius: 21,
+},
+
+footerBrand: {
+  marginTop: 13,
+  color: WHITE,
+  fontSize: 20,
+  fontWeight: "900",
+},
+
+footerTagline: {
+  marginTop: 8,
+  maxWidth: 420,
+  color: "#C6D4CB",
+  textAlign: "center",
+  fontSize: 12,
+  lineHeight: 19,
+},
+
+footerRow: {
+  marginTop: 13,
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 7,
+},
+
+footerText: {
+  color: "#E1EAE4",
+  fontSize: 12,
+  fontWeight: "600",
+},
+
+footerAddress: {
+  marginTop: 15,
+  maxWidth: 390,
+  color: "#AFC0B6",
+  textAlign: "center",
+  fontSize: 11,
+  lineHeight: 18,
+},
+
+socialRow: {
+  marginTop: 20,
+  flexDirection: "row",
+  gap: 10,
+},
+
+socialButton: {
+  width: 42,
+  height: 42,
+  borderRadius: 14,
+  backgroundColor: "rgba(255,255,255,.10)",
+  alignItems: "center",
+  justifyContent: "center",
+},
+
+copyright: {
+  marginTop: 25,
+  color: "#81978A",
+  fontSize: 10,
+  textAlign: "center",
+},
+
+  whatsapp: {
+    position: "absolute",
+    right: 18,
+    bottom:
+      Platform.OS === "web" ? 20 : 82,
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: "#20C764",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 8,
+  },
+
+
 });

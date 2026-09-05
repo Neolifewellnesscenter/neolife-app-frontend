@@ -1,7 +1,22 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
 import {
-  Linking,
+  DMSans_400Regular,
+  DMSans_500Medium,
+  DMSans_700Bold,
+  useFonts as useDMSans,
+} from "@expo-google-fonts/dm-sans";
+import {
+  PlayfairDisplay_600SemiBold,
+  PlayfairDisplay_700Bold,
+  useFonts as usePlayfair,
+} from "@expo-google-fonts/playfair-display";
+import { router } from "expo-router";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Animated,
+  Easing,
+  ImageBackground,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,478 +24,491 @@ import {
   View,
 } from "react-native";
 
-const PAPPYJOE_URL =
-  "https://cloud.pappyjoe.com/widget/index/UjhcZVAxCz0DYgNjAzUIYw%3D%3D";
+import PatientDrawer from "../../components/PatientDrawer";
+import PatientHeader from "../../components/PatientHeader";
 
-const therapyDetails: any = {
-  "Ayurvedic Consultation": {
-    icon: "leaf-outline",
-    subtitle: "Personalized Ayurvedic health guidance",
-    about:
-      "Ayurvedic consultation focuses on understanding body constitution, lifestyle, diet, digestion, sleep and overall wellness. Guidance is personalized according to individual health needs.",
-    benefits: [
-      "Personalized wellness advice",
-      "Diet and lifestyle guidance",
-      "Natural health support",
-      "Preventive care approach",
-    ],
-    procedure: [
-      "Health history discussion",
-      "Lifestyle and diet assessment",
-      "Ayurvedic wellness guidance",
-      "Follow-up care suggestions",
-    ],
-  },
+const GREEN = "#0B3D2E";
+const GREEN_2 = "#155741";
+const MINT = "#EAF5EF";
+const GOLD = "#D6B45B";
+const GOLD_DARK = "#B78D2B";
+const GOLD_LIGHT = "#F4E6B7";
+const CREAM = "#FBFAF6";
+const WHITE = "#FFFFFF";
+const MUTED = "#738179";
+const BORDER = "#E8E2D3";
 
-  Panchakarma: {
-    icon: "medkit-outline",
-    subtitle: "Traditional detox and rejuvenation therapy",
-    about:
-      "Panchakarma is a classical Ayurvedic detox and rejuvenation therapy that supports cleansing, relaxation and wellness restoration.",
-    benefits: [
-      "Supports detoxification",
-      "Body rejuvenation",
-      "Improves wellness",
-      "Promotes relaxation",
-    ],
-    procedure: [
-      "Doctor consultation",
-      "Preparation therapies",
-      "Main Panchakarma procedure",
-      "Post-therapy diet and care",
-    ],
-  },
-
-  Acupuncture: {
-    icon: "pulse-outline",
-    subtitle: "Supportive therapy for pain and stress",
-    about:
-      "Acupuncture is a supportive therapy that helps with pain relief, stress reduction, relaxation and body balance.",
-    benefits: [
-      "Pain relief support",
-      "Stress reduction",
-      "Muscle relaxation",
-      "Energy balance support",
-    ],
-    procedure: [
-      "Consultation and assessment",
-      "Point selection",
-      "Professional needle application",
-      "Relaxation and follow-up care",
-    ],
-  },
-
-  Naturopathy: {
-    icon: "flower-outline",
-    subtitle: "Drug-free natural wellness care",
-    about:
-      "Naturopathy focuses on natural healing through diet, lifestyle correction, yoga, hydrotherapy and preventive wellness practices.",
-    benefits: [
-      "Natural healing support",
-      "Healthy lifestyle improvement",
-      "Preventive wellness",
-      "Diet and nutrition guidance",
-    ],
-    procedure: [
-      "Lifestyle assessment",
-      "Diet and wellness planning",
-      "Natural therapy guidance",
-      "Progress follow-up",
-    ],
-  },
-
-  Yoga: {
-    icon: "body-outline",
-    subtitle: "Mind and body wellness practice",
-    about:
-      "Yoga supports flexibility, strength, breathing, mental calmness and inner balance through guided practices.",
-    benefits: [
-      "Improves flexibility",
-      "Supports mental calmness",
-      "Enhances strength",
-      "Supports breathing",
-    ],
-    procedure: [
-      "Initial assessment",
-      "Guided yoga practice",
-      "Breathing exercises",
-      "Home practice guidance",
-    ],
-  },
+type Therapy = {
+  id: string;
+  title: string;
+  short: string;
+  icon: any;
+  image: any;
+  accent: string;
+  focus: string;
+  routeTitle: string;
 };
 
-const beautyServices = [
+const therapies: Therapy[] = [
   {
-    icon: "sparkles-outline",
-    title: "Facials",
-    desc: "Professional facial care for skin cleansing, glow, hydration and rejuvenation.",
-    items: ["Hydra Facial", "Gold Facial", "Oxy Facial", "Fruit Facial", "Anti-Aging Facial"],
-  },
-  {
-    icon: "color-wand-outline",
-    title: "Lip Treatments",
-    desc: "Natural cosmetic lip care for dark lips and lip tone correction.",
-    items: ["Dark Lip Correction", "Lip Neutralization"],
-  },
-  {
-    icon: "eye-outline",
-    title: "Eyebrow Treatments",
-    desc: "Eyebrow shaping and enhancement treatments for a defined natural look.",
-    items: ["Ombre Eyebrows", "Combination Eyebrows", "Eyebrow Reconstruction"],
-  },
-  {
+    id: "ayurveda",
+    title: "Ayurveda & Panchakarma",
+    short:
+      "Reconnect with your body's natural balance through personalized Ayurvedic care and traditional Panchakarma therapies.",
     icon: "leaf-outline",
-    title: "Hair Treatment",
-    desc: "Hair wellness therapy to support scalp care, hair roots and natural hair growth.",
-    items: ["Hair Growth Therapy", "Scalp Rejuvenation", "Hair Pack Treatment"],
+    image: require("../../assets/images/ayurvedapancha.png"),
+    accent: "#F4F1E8",
+    focus: "Detox • Rejuvenate",
+    routeTitle: "Panchakarma",
   },
   {
-    icon: "hand-left-outline",
-    title: "Manicure",
-    desc: "Complete hand, nail and cuticle care for clean and healthy hands.",
-    items: ["Nail Care", "Hand Massage", "Cuticle Care"],
+    id: "acupuncture",
+    title: "Acupuncture",
+    short:
+      "A focused supportive therapy for pain management, muscle relaxation, circulation and overall body balance.",
+    icon: "pulse-outline",
+    image: require("../../assets/images/accupunture.png"),
+    accent: "#EEF6F8",
+    focus: "Pain • Stress • Balance",
+    routeTitle: "Acupuncture",
   },
   {
-    icon: "walk-outline",
-    title: "Pedicure",
-    desc: "Foot cleansing, nail trimming, exfoliation, massage and complete foot care.",
-    items: ["Foot Cleansing", "Nail Trimming", "Exfoliation", "Foot Massage"],
+    id: "yoga",
+    title: "Yoga Therapy",
+    short:
+      "Build flexibility, strength and calm through guided movement, breathing and relaxation practices.",
+    icon: "body-outline",
+    image: require("../../assets/images/yoga.jpg"),
+    accent: "#F2F1FA",
+    focus: "Move • Breathe • Relax",
+    routeTitle: "Yoga",
+  },
+  {
+    id: "naturopathy",
+    title: "Naturopathy",
+    short:
+      "Support your body's natural healing ability through lifestyle guidance, diet support and gentle natural therapies.",
+    icon: "flower-outline",
+    image: require("../../assets/images/yoga.jpg"),
+    accent: "#F4F7E8",
+    focus: "Nature • Lifestyle • Healing",
+    routeTitle: "Naturopathy",
+  },
+  {
+    id: "chiropractic",
+    title: "Chiropractic Therapy",
+    short:
+      "Support better movement, posture and joint mobility through gentle manual care focused on the musculoskeletal system.",
+    icon: "fitness-outline",
+    image: require("../../assets/images/chiropractic.jpg"),
+    accent: "#F7EFEA",
+    focus: "Posture • Mobility • Alignment",
+    routeTitle: "Chiropractic",
   },
 ];
 
-export default function TherapyDetailsScreen() {
-  const { title } = useLocalSearchParams();
-  const therapyTitle = title?.toString() || "Ayurvedic Consultation";
+export default function TherapiesScreen() {
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  const isBeauty =
-    therapyTitle === "Beauty Therapy" || therapyTitle === "Beauty & Cosmetics";
+  const [dmLoaded] = useDMSans({
+    DMSans_400Regular,
+    DMSans_500Medium,
+    DMSans_700Bold,
+  });
 
-  const data =
-    therapyDetails[therapyTitle] || therapyDetails["Ayurvedic Consultation"];
+  const [playfairLoaded] = usePlayfair({
+    PlayfairDisplay_600SemiBold,
+    PlayfairDisplay_700Bold,
+  });
 
-  return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color="#1B5E20" />
-        </TouchableOpacity>
+  const cardAnims = useMemo(
+    () => therapies.map(() => new Animated.Value(0)),
+    []
+  );
 
-        <Text style={styles.headerTitle}>Therapy Details</Text>
+  useEffect(() => {
+    Animated.stagger(
+      90,
+      cardAnims.map((anim) =>
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: 480,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        })
+      )
+    ).start();
+  }, []);
+
+  function openTherapy(title: string) {
+    router.push({
+      pathname: "/therapy-details",
+      params: { title },
+    } as any);
+  }
+
+  if (!dmLoaded || !playfairLoaded) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color={GREEN} />
       </View>
+    );
+  }
 
-      {isBeauty ? (
-        <>
-          <View style={styles.heroCard}>
-            <View style={styles.heroIcon}>
-              <Ionicons name="sparkles-outline" size={42} color="#1B5E20" />
-            </View>
+  return (
+    <View style={styles.screen}>
+      <PatientHeader onMenuPress={() => setMenuOpen(true)} />
 
-            <Text style={styles.title}>Beauty & Cosmetics</Text>
-            <Text style={styles.subtitle}>
-              Professional skin, lip, eyebrow, hair, hand and foot care services.
-            </Text>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Beauty Services</Text>
-            <Text style={styles.text}>
-              Explore our professional beauty and cosmetic treatments designed
-              for natural beauty enhancement and complete personal care.
-            </Text>
-          </View>
-
-          {beautyServices.map((service) => (
-            <View style={styles.beautyCard} key={service.title}>
-              <View style={styles.beautyTop}>
-                <View style={styles.beautyIconBox}>
-                  <Ionicons
-                    name={service.icon as any}
-                    size={28}
-                    color="#1B5E20"
-                  />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.beautyTitle}>{service.title}</Text>
-                  <Text style={styles.beautyDesc}>{service.desc}</Text>
-                </View>
-              </View>
-
-              <View style={styles.serviceList}>
-                {service.items.map((item) => (
-                  <View style={styles.servicePill} key={item}>
-                    <Ionicons name="checkmark-circle" size={15} color="#1B5E20" />
-                    <Text style={styles.serviceText}>{item}</Text>
-                  </View>
-                ))}
-              </View>
-
-              <TouchableOpacity
-                style={styles.beautyBookBtn}
-                onPress={() => Linking.openURL(PAPPYJOE_URL)}
-              >
-                <Text style={styles.beautyBookText}>Book Appointment</Text>
-                <Ionicons name="calendar-outline" size={18} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          ))}
-        </>
-      ) : (
-        <>
-          <View style={styles.heroCard}>
-            <View style={styles.heroIcon}>
-              <Ionicons name={data.icon as any} size={42} color="#1B5E20" />
-            </View>
-
-            <Text style={styles.title}>{therapyTitle}</Text>
-            <Text style={styles.subtitle}>{data.subtitle}</Text>
-          </View>
-
-          <Section title="About Therapy">
-            <Text style={styles.text}>{data.about}</Text>
-          </Section>
-
-          <Section title="Benefits">
-            {data.benefits.map((item: string) => (
-              <Bullet key={item} text={item} />
-            ))}
-          </Section>
-
-          <Section title="Procedure">
-            {data.procedure.map((item: string, index: number) => (
-              <View style={styles.stepRow} key={item}>
-                <View style={styles.stepCircle}>
-                  <Text style={styles.stepNo}>{index + 1}</Text>
-                </View>
-                <Text style={styles.stepText}>{item}</Text>
-              </View>
-            ))}
-          </Section>
-        </>
-      )}
-
-      <TouchableOpacity
-        style={styles.bookBtn}
-        onPress={() => Linking.openURL(PAPPYJOE_URL)}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
       >
-        <Text style={styles.bookText}>Book Appointment</Text>
-        <Ionicons name="calendar-outline" size={21} color="#fff" />
-      </TouchableOpacity>
+        {/* SIMPLE INTRO */}
+        <View style={styles.intro}>
+          <Text style={styles.eyebrow}>OUR THERAPIES</Text>
 
-      <View style={{ height: 35 }} />
-    </ScrollView>
-  );
-}
+          <Text style={styles.pageTitle}>
+            Natural care for{"\n"}better wellbeing
+          </Text>
 
-function Section({ title, children }: any) {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {children}
-    </View>
-  );
-}
+          <Text style={styles.pageText}>
+            Explore NeoLife therapies designed to support movement, balance,
+            relaxation and long-term wellness.
+          </Text>
+        </View>
 
-function Bullet({ text }: { text: string }) {
-  return (
-    <View style={styles.bulletRow}>
-      <Ionicons name="checkmark-circle" size={18} color="#1B5E20" />
-      <Text style={styles.bulletText}>{text}</Text>
+        {/* IMAGE CARDS - SAME VISUAL STYLE AS BEAUTY & COSMETICS */}
+        <View style={styles.cards}>
+          {therapies.map((therapy, index) => {
+            const anim = cardAnims[index];
+
+            return (
+              <Animated.View
+                key={therapy.id}
+                style={{
+                  opacity: anim,
+                  transform: [
+                    {
+                      translateY: anim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [24, 0],
+                      }),
+                    },
+                    {
+                      scale: anim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.98, 1],
+                      }),
+                    },
+                  ],
+                }}
+              >
+                <TouchableOpacity
+                  activeOpacity={0.92}
+                  style={styles.therapyCard}
+                  onPress={() => openTherapy(therapy.routeTitle)}
+                >
+                  <ImageBackground
+                    source={therapy.image}
+                    style={styles.therapyImage}
+                    imageStyle={styles.therapyImageStyle}
+                    resizeMode="cover"
+                  >
+                    <View style={styles.overlayTop} />
+                    <View style={styles.overlayBottom} />
+
+                    {/* TOP ROW */}
+                    <View style={styles.cardTop}>
+                      <View
+                        style={[
+                          styles.iconBox,
+                          { backgroundColor: therapy.accent },
+                        ]}
+                      >
+                        <Ionicons
+                          name={therapy.icon}
+                          size={27}
+                          color={GREEN}
+                        />
+                      </View>
+
+                      <View style={styles.focusPill}>
+                        <Ionicons
+                          name="leaf-outline"
+                          size={13}
+                          color={WHITE}
+                        />
+
+                        <Text style={styles.focusText}>
+                          {therapy.focus}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* BOTTOM COPY */}
+                    <View style={styles.cardBottom}>
+                      <Text style={styles.therapyTitle}>
+                        {therapy.title}
+                      </Text>
+
+                      <Text style={styles.therapyShort}>
+                        {therapy.short}
+                      </Text>
+
+                      <View style={styles.discoverRow}>
+                        <Text style={styles.discoverText}>
+                          Discover the therapy
+                        </Text>
+
+                        <Ionicons
+                          name="arrow-forward"
+                          size={19}
+                          color={GOLD_LIGHT}
+                        />
+                      </View>
+                    </View>
+                  </ImageBackground>
+                </TouchableOpacity>
+              </Animated.View>
+            );
+          })}
+        </View>
+
+        {/* SIMPLE BOTTOM NOTE */}
+        <View style={styles.bottomNote}>
+          <View style={styles.bottomIcon}>
+            <Ionicons
+              name="heart-outline"
+              size={22}
+              color={GREEN}
+            />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.bottomTitle}>
+              Personalized wellness support
+            </Text>
+
+            <Text style={styles.bottomText}>
+              Therapy recommendations can be planned according to your health
+              concerns, comfort and wellness goals.
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ height: 30 }} />
+      </ScrollView>
+
+      <PatientDrawer
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        activeRoute="/therapies"
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: "#fbfff9",
+    backgroundColor: CREAM,
   },
-  header: {
-    paddingTop: 55,
-    paddingHorizontal: 18,
-    paddingBottom: 15,
+
+  loader: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: CREAM,
+  },
+
+  scrollContent: {
+    paddingBottom: 4,
+  },
+
+  intro: {
+    paddingHorizontal: 20,
+    paddingTop: 27,
+    paddingBottom: 20,
+  },
+
+  eyebrow: {
+    fontFamily: "DMSans_700Bold",
+    color: GOLD_DARK,
+    fontSize: 9,
+    letterSpacing: 1.5,
+  },
+
+  pageTitle: {
+    marginTop: 7,
+    fontFamily: "PlayfairDisplay_700Bold",
+    color: GREEN,
+    fontSize: 34,
+    lineHeight: 39,
+    letterSpacing: -0.5,
+  },
+
+  pageText: {
+    marginTop: 9,
+    maxWidth: 380,
+    fontFamily: "DMSans_400Regular",
+    color: MUTED,
+    fontSize: 12,
+    lineHeight: 19,
+  },
+
+  cards: {
+    paddingHorizontal: 16,
+    gap: 16,
+  },
+
+  therapyCard: {
+    height: 460,
+    borderRadius: 29,
+    overflow: "hidden",
+    backgroundColor: GREEN,
+    borderWidth: 1,
+    borderColor: BORDER,
+    elevation: 4,
+    shadowColor: GREEN,
+    shadowOffset: {
+      width: 0,
+      height: 5,
+    },
+    shadowOpacity: 0.09,
+    shadowRadius: 11,
+  },
+
+  therapyImage: {
+    flex: 1,
+    justifyContent: "space-between",
+  },
+
+  therapyImageStyle: {
+    borderRadius: 28,
+  },
+
+  overlayTop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(4,32,22,0.12)",
+  },
+
+  overlayBottom: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: "62%",
+    backgroundColor: "rgba(3,29,20,0.58)",
+  },
+
+  cardTop: {
+    paddingTop: 22,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+
+  iconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.55)",
+  },
+
+  focusPill: {
+    maxWidth: 180,
+    minHeight: 47,
+    paddingHorizontal: 13,
+    borderRadius: 16,
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 6,
+    backgroundColor: "rgba(5,69,50,0.88)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
   },
-  backBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 4,
+
+  focusText: {
+    flexShrink: 1,
+    fontFamily: "DMSans_700Bold",
+    color: WHITE,
+    fontSize: 8,
+    lineHeight: 12,
   },
-  headerTitle: {
-    color: "#064b16",
-    fontSize: 23,
-    fontWeight: "bold",
+
+  cardBottom: {
+    paddingHorizontal: 21,
+    paddingBottom: 23,
   },
-  heroCard: {
-    margin: 18,
-    backgroundColor: "#1B5E20",
-    borderRadius: 26,
-    padding: 24,
-    alignItems: "center",
-    elevation: 5,
+
+  therapyTitle: {
+    maxWidth: 390,
+    fontFamily: "PlayfairDisplay_700Bold",
+    color: WHITE,
+    fontSize: 32,
+    lineHeight: 37,
+    letterSpacing: -0.5,
   },
-  heroIcon: {
-    width: 82,
-    height: 82,
-    borderRadius: 41,
-    backgroundColor: "#e8f5e9",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 15,
+
+  therapyShort: {
+    marginTop: 9,
+    maxWidth: 390,
+    fontFamily: "DMSans_400Regular",
+    color: "#F1F4F2",
+    fontSize: 12,
+    lineHeight: 19,
   },
-  title: {
-    color: "#fff",
-    fontSize: 25,
-    fontWeight: "bold",
-    textAlign: "center",
-  },
-  subtitle: {
-    color: "#e8f5e9",
-    fontSize: 14,
-    textAlign: "center",
-    marginTop: 7,
-    lineHeight: 21,
-  },
-  section: {
-    marginHorizontal: 18,
-    marginBottom: 16,
-    backgroundColor: "#fff",
-    borderRadius: 22,
-    padding: 20,
-    elevation: 4,
-  },
-  sectionTitle: {
-    color: "#064b16",
-    fontSize: 19,
-    fontWeight: "bold",
-    marginBottom: 10,
-  },
-  text: {
-    color: "#555",
-    fontSize: 14,
-    lineHeight: 23,
-  },
-  bulletRow: {
+
+  discoverRow: {
+    marginTop: 17,
     flexDirection: "row",
     alignItems: "center",
     gap: 9,
-    marginBottom: 10,
-  },
-  bulletText: {
-    color: "#444",
-    fontSize: 14,
-    flex: 1,
-  },
-  stepRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 14,
-    gap: 12,
-  },
-  stepCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#1B5E20",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  stepNo: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-  stepText: {
-    color: "#444",
-    fontSize: 14,
-    flex: 1,
-    lineHeight: 21,
-  },
-  bookBtn: {
-    marginHorizontal: 18,
-    backgroundColor: "#1B5E20",
-    paddingVertical: 16,
-    borderRadius: 28,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-    elevation: 5,
-  },
-  bookText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
   },
 
-  beautyCard: {
-    marginHorizontal: 18,
-    marginBottom: 16,
-    backgroundColor: "#fff",
-    borderRadius: 24,
-    padding: 18,
-    elevation: 4,
+  discoverText: {
+    fontFamily: "DMSans_700Bold",
+    color: GOLD_LIGHT,
+    fontSize: 11,
   },
-  beautyTop: {
+
+  bottomNote: {
+    marginTop: 24,
+    marginHorizontal: 16,
+    padding: 15,
+    borderRadius: 20,
     flexDirection: "row",
-    gap: 14,
+    alignItems: "center",
+    backgroundColor: MINT,
+    borderWidth: 1,
+    borderColor: "#D8E7DE",
   },
-  beautyIconBox: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: "#e8f5e9",
+
+  bottomIcon: {
+    width: 45,
+    height: 45,
+    marginRight: 11,
+    borderRadius: 15,
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: WHITE,
   },
-  beautyTitle: {
-    color: "#064b16",
-    fontSize: 18,
-    fontWeight: "bold",
+
+  bottomTitle: {
+    fontFamily: "DMSans_700Bold",
+    color: GREEN,
+    fontSize: 11,
   },
-  beautyDesc: {
-    color: "#555",
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 5,
-  },
-  serviceList: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 15,
-  },
-  servicePill: {
-    backgroundColor: "#e8f5e9",
-    borderRadius: 18,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  serviceText: {
-    color: "#1B5E20",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  beautyBookBtn: {
-    marginTop: 16,
-    backgroundColor: "#1B5E20",
-    paddingVertical: 13,
-    borderRadius: 24,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 7,
-  },
-  beautyBookText: {
-    color: "#fff",
-    fontWeight: "bold",
+
+  bottomText: {
+    marginTop: 3,
+    fontFamily: "DMSans_400Regular",
+    color: GREEN_2,
+    fontSize: 8,
+    lineHeight: 13,
   },
 });

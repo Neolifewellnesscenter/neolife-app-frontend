@@ -31,12 +31,12 @@ export default function OnboardingScreen() {
   const item = slides[index];
 
   const next = () => {
-    if (index < slides.length - 1) {
-      setIndex(index + 1);
-    } else {
-      router.replace("/login");
-    }
-  };
+  if (index < slides.length - 1) {
+    setIndex(index + 1);
+  } else {
+    router.replace("/(tabs)");
+  }
+};
 
   return (
     <View style={styles.container}>
@@ -63,10 +63,10 @@ export default function OnboardingScreen() {
       </TouchableOpacity>
 
       {index < slides.length - 1 && (
-        <TouchableOpacity onPress={() => router.replace("/login")}>
-          <Text style={styles.skip}>Skip</Text>
-        </TouchableOpacity>
-      )}
+  <TouchableOpacity onPress={() => router.replace("/(tabs)")}>
+    <Text style={styles.skip}>Skip</Text>
+  </TouchableOpacity>
+)}
     </View>
   );
 }

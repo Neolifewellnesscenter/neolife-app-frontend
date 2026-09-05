@@ -1,12 +1,18 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
+import {
+  DarkTheme,
+  DefaultTheme,
+  ThemeProvider,
+} from "@react-navigation/native";
+
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
+
 import { WishlistProvider } from "../context/WishlistContext";
 import { AppThemeProvider } from "../context/ThemeContext";
+import { CartProvider } from "../context/CartContext";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { CartProvider } from "../context/CartContext";
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -15,31 +21,51 @@ export default function RootLayout() {
     <CartProvider>
       <WishlistProvider>
         <AppThemeProvider>
-      <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-        <Stack initialRouteName="splash">
-          <Stack.Screen name="splash" options={{ headerShown: false }} />
-          <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-          <Stack.Screen name="login" options={{ headerShown: false }} />
-          <Stack.Screen name="register" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="cart" options={{ headerShown: false }} />
-          <Stack.Screen name="product-details" options={{ headerShown: false }} />
-          <Stack.Screen name="doctor-profile" options={{ headerShown: false }} />
-          <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
-          <Stack.Screen
-  name="checkout"
-  options={{ headerShown: false }}
-/>
-<Stack.Screen name="order-success" options={{ headerShown: false }} />
-<Stack.Screen name="therapy-details" options={{ headerShown: false }} />
-        <Stack.Screen name="notifications" options={{ headerShown: false }} />
-        <Stack.Screen name="my-orders" options={{ headerShown: false }} />
-        <Stack.Screen name="terms-conditions" options={{ headerShown: false }} />
-        <Stack.Screen name="medical-disclaimer" options={{ headerShown: false }} />
-        </Stack>
-        <StatusBar style="light" />
-      </ThemeProvider>
-      </AppThemeProvider>
+          <ThemeProvider
+            value={
+              colorScheme === "dark"
+                ? DarkTheme
+                : DefaultTheme
+            }
+          >
+            <Stack
+              initialRouteName="splash"
+              screenOptions={{
+                headerShown: false,
+              }}
+            >
+              <Stack.Screen name="splash" />
+              <Stack.Screen name="onboarding" />
+              <Stack.Screen name="login" />
+              <Stack.Screen name="register" />
+
+              <Stack.Screen name="(tabs)" />
+
+              <Stack.Screen name="cart" />
+              
+
+              
+              <Stack.Screen name="therapy-details" />
+
+              <Stack.Screen name="notifications" />
+
+              <Stack.Screen name="my-orders" />
+
+              <Stack.Screen name="terms-conditions" />
+              <Stack.Screen name="medical-disclaimer" />
+
+              <Stack.Screen
+                name="modal"
+                options={{
+                  presentation: "modal",
+                  headerShown: false,
+                }}
+              />
+            </Stack>
+
+            <StatusBar style="dark" />
+          </ThemeProvider>
+        </AppThemeProvider>
       </WishlistProvider>
     </CartProvider>
   );
