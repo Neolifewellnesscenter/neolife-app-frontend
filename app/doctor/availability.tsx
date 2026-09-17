@@ -29,6 +29,8 @@ import {
   View,
 } from "react-native";
 import { API_BASE_URL } from "../../services/api";
+import DoctorHeader from "../../components/DoctorHeader";
+import DoctorDrawer from "../../components/DoctorDrawer";
 
 const GREEN = "#0B3D2E";
 const GREEN_2 = "#14533D";
@@ -80,21 +82,10 @@ type Notice = {
 
 type ConfirmState = {
   visible: boolean;
-  kind: "delete" | "unblock" | "logout" | "";
+  kind: "delete" | "unblock" | "";
   id?: number | string;
 };
 
-const MENU = [
-  ["grid-outline","Dashboard","/doctor/dashboard","MAIN"],
-  ["people-outline","Patients","/doctor/patients","MAIN"],
-  ["calendar-outline","Appointment Calendar","/doctor/calendar","MAIN"],
-  ["calendar-number-outline","Upcoming Schedule","/doctor/schedule","MAIN"],
-  ["time-outline","Manage Availability","/doctor/availability","MAIN"],
-  ["clipboard-outline","Appointment Details","/doctor/appointments","CLINICAL","OFFLINE"],
-  ["videocam-outline","Consultation Details","/doctor/consultations","CLINICAL","ONLINE"],
-  ["card-outline","Transactions","/doctor/transactions","FINANCE"],
-  ["person-circle-outline","My Profile","/doctor/profile","FINANCE"],
-] as const;
 
 export default function DoctorAvailabilityScreen() {
   const [dmLoaded] = useDMSans({DMSans_400Regular,DMSans_500Medium,DMSans_700Bold});
@@ -136,8 +127,15 @@ export default function DoctorAvailabilityScreen() {
   const [notice,setNotice] = useState<Notice>({visible:false,type:"info",title:"",message:""});
   const [confirm,setConfirm] = useState<ConfirmState>({visible:false,kind:""});
 
-  const initial = useMemo(() => doctorName.replace(/^Dr\.?\s*/i,"").trim().charAt(0).toUpperCase() || "D",[doctorName]);
-
+  const initial = useMemo(
+  () =>
+    doctorName
+      .replace(/^Dr\.?\s*/i, "")
+      .trim()
+      .charAt(0)
+      .toUpperCase() || "D",
+  [doctorName]
+);
   async function getToken(){
     return (await AsyncStorage.getItem("doctorToken")) ||
       (await AsyncStorage.getItem("token")) ||
@@ -219,12 +217,59 @@ export default function DoctorAvailabilityScreen() {
     return id;
   }
 
-  async function resolveDoctorId(){
-    if(doctorId) return doctorId;
-    const stored = Number(await AsyncStorage.getItem("doctorId")) || null;
-    if(stored){ setDoctorId(stored); return stored; }
-    return await loadProfile();
+  async function resolveDoctorId() {
+  if (doctorId) {
+    return doctorId;
   }
+
+  const stored = await AsyncStorage.getItem("doctorId");
+
+  if (stored) {
+    const id = Number(stored);
+
+    if (id) {
+      setDoctorId(id);
+      return id;
+    }
+  }
+
+  const result = await api("/doctors/my-profile");
+
+  const doctor = result?.data || {};
+
+  const id = Number(
+    doctor?.id ?? doctor?.doctorId ?? 0
+  );
+
+  if (!id) {
+    throw new Error(
+      "Complete your doctor profile before managing availability."
+    );
+  }
+
+  const name =
+    doctor?.name ||
+    doctor?.doctorName ||
+    "Doctor";
+
+  const spec =
+    doctor?.specialization ||
+    doctor?.qualification ||
+    "Manage availability and blocked slots";
+
+  setDoctorId(id);
+  setDoctorName(name);
+  setSpecialization(spec);
+
+  await AsyncStorage.multiSet([
+    ["doctorId", String(id)],
+    ["doctorName", name],
+    ["doctorSpecialization", spec],
+    ["doctor", JSON.stringify(doctor)],
+  ]);
+
+  return id;
+}
 
   function extractArray(result:any){
     if(Array.isArray(result)) return result;
@@ -237,7 +282,11 @@ export default function DoctorAvailabilityScreen() {
   async function loadAvailability(id?:number|null){
     const did = id || await resolveDoctorId();
     if(!did) throw new Error("Doctor profile ID could not be identified.");
-    const result = await api(`/doctor-availability/doctor/${did}`);
+    const result = await api(
+  `/doctor-availability/doctor/${encodeURIComponent(
+    String(did)
+  )}`
+);
     const records = extractArray(result) as Availability[];
     const order:any={MONDAY:1,TUESDAY:2,WEDNESDAY:3,THURSDAY:4,FRIDAY:5,SATURDAY:6,SUNDAY:7};
     records.sort((a,b)=>(order[a.dayOfWeek]||99)-(order[b.dayOfWeek]||99) || String(a.startTime||"").localeCompare(String(b.startTime||"")));
@@ -259,25 +308,47 @@ export default function DoctorAvailabilityScreen() {
   async function loadBlocked(id?:number|null){
     const did = id || await resolveDoctorId();
     if(!did) throw new Error("Doctor profile ID could not be identified.");
-    const result = await api(`/doctor-availability/blocked/doctor/${did}`);
+    const result = await api(
+  `/doctor-availability/blocked/doctor/${encodeURIComponent(
+    String(did)
+  )}`
+);
     const records=(extractArray(result) as BlockedSlot[])
       .filter(x=>x.active!==false)
       .sort((a,b)=>String(a.blockedDate||"").localeCompare(String(b.blockedDate||"")) || String(a.startTime||"").localeCompare(String(b.startTime||"")));
     setBlockedSlots(records);
   }
 
-  async function loadPage(initialLoad=false){
-    try{
-      if(initialLoad) setLoading(true);
-      const ok=await validateDoctor(); if(!ok) return;
-      const id=await loadProfile();
-      await Promise.all([loadAvailability(id),loadBlocked(id)]);
-    }catch(e:any){
-      showNotice("error","Unable to Load",e?.message || "Unable to load doctor availability.");
-    }finally{
-      setLoading(false); setRefreshing(false);
+  async function loadPage(initialLoad = false) {
+  try {
+    if (initialLoad) {
+      setLoading(true);
     }
+
+    const ok = await validateDoctor();
+
+    if (!ok) {
+      return;
+    }
+
+    const id = await resolveDoctorId();
+
+    await Promise.all([
+      loadAvailability(id),
+      loadBlocked(id),
+    ]);
+  } catch (error: any) {
+    showNotice(
+      "error",
+      "Unable to Load",
+      error?.message ||
+        "Unable to load doctor availability."
+    );
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
   }
+}
 
   useEffect(()=>{ loadPage(true); },[]);
 
@@ -328,15 +399,38 @@ export default function DoctorAvailabilityScreen() {
     }finally{ setCreating(false); }
   }
 
-  async function deleteAvailability(id:number|string){
-    try{
-      const result=await api(`/doctor-availability/delete/${id}`,{method:"DELETE"});
-      showNotice("success","Availability Deleted",result?.message || "Availability deleted successfully.");
-      await loadAvailability();
-    }catch(e:any){
-      showNotice("error","Unable to Delete",e?.message || "Unable to delete availability.");
+  async function deleteAvailability(id: number | string) {
+  try {
+    if (id === null || id === undefined || String(id).trim() === "") {
+      throw new Error("Availability ID is missing.");
     }
+
+    console.log("Deleting availability ID:", id);
+
+    const result = await api(
+      `/doctor-availability/delete/${encodeURIComponent(String(id))}`,
+      {
+        method: "DELETE",
+      }
+    );
+
+    showNotice(
+      "success",
+      "Availability Deleted",
+      result?.message || "Availability deleted successfully."
+    );
+
+    await loadAvailability();
+  } catch (e: any) {
+    console.log("DELETE AVAILABILITY ERROR:", e);
+
+    showNotice(
+      "error",
+      "Unable to Delete",
+      e?.message || "Unable to delete availability."
+    );
   }
+}
 
   function resetBlock(){
     setBlockedDate(formatDateKey(new Date()));
@@ -377,32 +471,56 @@ export default function DoctorAvailabilityScreen() {
     }finally{ setBlocking(false); }
   }
 
-  async function unblockSlot(id:number|string){
-    try{
-      const result=await api(`/doctor-availability/unblock/${id}`,{method:"DELETE"});
-      showNotice("success","Slot Unblocked",result?.message || "Slot unblocked successfully.");
-      await loadBlocked();
-    }catch(e:any){
-      showNotice("error","Unable to Unblock",e?.message || "Unable to unblock slot.");
+  async function unblockSlot(id: number | string) {
+  try {
+    if (id === null || id === undefined || String(id).trim() === "") {
+      throw new Error("Blocked slot ID is missing.");
     }
-  }
 
-  async function performConfirm(){
-    const c=confirm;
-    setConfirm({visible:false,kind:""});
-    if(c.kind==="delete" && c.id!=null) await deleteAvailability(c.id);
-    if(c.kind==="unblock" && c.id!=null) await unblockSlot(c.id);
-    if(c.kind==="logout"){
-      await clearSession();
-      router.replace("/login" as any);
-    }
-  }
+    console.log("Unblocking slot ID:", id);
 
-  const visibleMenu=MENU.filter(item=>{
-    if(item[4]==="ONLINE" && hasOnline===false) return false;
-    if(item[4]==="OFFLINE" && hasOffline===false) return false;
-    return true;
+    const result = await api(
+      `/doctor-availability/unblock/${encodeURIComponent(String(id))}`,
+      {
+        method: "DELETE",
+      }
+    );
+
+    showNotice(
+      "success",
+      "Slot Unblocked",
+      result?.message || "Slot unblocked successfully."
+    );
+
+    await loadBlocked();
+  } catch (e: any) {
+    console.log("UNBLOCK SLOT ERROR:", e);
+
+    showNotice(
+      "error",
+      "Unable to Unblock",
+      e?.message || "Unable to unblock slot."
+    );
+  }
+}
+
+ async function performConfirm() {
+  const c = confirm;
+
+  setConfirm({
+    visible: false,
+    kind: "",
   });
+
+  if (c.kind === "delete" && c.id != null) {
+    await deleteAvailability(c.id);
+  }
+
+  if (c.kind === "unblock" && c.id != null) {
+    await unblockSlot(c.id);
+  }
+}
+  
 
   if(!dmLoaded || !playfairLoaded || loading){
     return <View style={s.loader}><ActivityIndicator size="large" color={GREEN}/><Text style={s.loaderText}>Loading availability...</Text></View>;
@@ -410,16 +528,11 @@ export default function DoctorAvailabilityScreen() {
 
   return (
     <View style={s.screen}>
-      <View style={s.header}>
-        <TouchableOpacity style={s.headerIcon} onPress={()=>setMenuOpen(true)}><Ionicons name="menu-outline" size={25} color={GREEN}/></TouchableOpacity>
-        <View style={{flex:1}}>
-          <Text style={s.eyebrow}>DOCTOR PORTAL</Text>
-          <Text style={s.headerTitle}>Manage Availability</Text>
-        </View>
-        <TouchableOpacity style={s.headerIcon} onPress={()=>router.replace("/doctor/dashboard" as any)}><Ionicons name="grid-outline" size={20} color={GREEN}/></TouchableOpacity>
-        <TouchableOpacity style={s.avatar} onPress={()=>router.push("/doctor/profile" as any)}><Text style={s.avatarText}>{initial}</Text></TouchableOpacity>
-      </View>
-
+      
+<DoctorHeader
+  title="Manage Availability"
+  onMenuPress={() => setMenuOpen(true)}
+/>
       <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={GREEN} colors={[GREEN]}/>} contentContainerStyle={{paddingBottom:36}}>
         <View style={s.hero}>
           <View style={s.heroBubble}/>
@@ -429,7 +542,7 @@ export default function DoctorAvailabilityScreen() {
         </View>
 
         <View style={s.doctorCard}>
-          <View style={s.doctorAvatar}><Text style={s.doctorAvatarText}>{initial}</Text></View>
+        
           <View style={{flex:1}}>
             <Text style={s.doctorName}>{doctorName}</Text>
             <Text style={s.doctorSpec}>{specialization}</Text>
@@ -479,7 +592,7 @@ export default function DoctorAvailabilityScreen() {
 
         <SectionHeader eyebrow="TEMPORARY UNAVAILABILITY" title="My Blocked Slots" onRefresh={()=>loadBlocked()}/>
         <View style={s.list}>
-          {blockedSlots.length===0 ? <Empty icon="calendar-check-outline" title="No active blocked slots" text="Your schedule currently has no temporary blocked dates or time ranges."/> :
+          {blockedSlots.length===0 ? <Empty icon="checkmark-circle-outline" title="No active blocked slots" text="Your schedule currently has no temporary blocked dates or time ranges."/> :
             blockedSlots.map(item=>(
               <View key={String(item.id)} style={s.slotCard}>
                 <View style={[s.slotIcon,{backgroundColor:DANGER_LIGHT}]}><Ionicons name="ban-outline" size={20} color={DANGER}/></View>
@@ -497,47 +610,12 @@ export default function DoctorAvailabilityScreen() {
           }
         </View>
       </ScrollView>
-
-      {/* DRAWER */}
-      <Modal visible={menuOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={()=>setMenuOpen(false)}>
-        <View style={s.drawerRoot}>
-          <Pressable style={s.backdrop} onPress={()=>setMenuOpen(false)}/>
-          <View style={s.drawer}>
-            <View style={s.drawerBrand}>
-              <View style={s.brandIcon}><Ionicons name="medical" size={25} color={GOLD}/></View>
-              <View style={{flex:1}}><Text style={s.brandTitle}>NeoLife</Text><Text style={s.brandSub}>DOCTOR PORTAL</Text></View>
-              <TouchableOpacity style={s.drawerClose} onPress={()=>setMenuOpen(false)}><Ionicons name="close" size={22} color={GREEN}/></TouchableOpacity>
-            </View>
-            <View style={s.drawerDoctor}>
-              <View style={s.drawerAvatar}><Text style={s.drawerAvatarText}>{initial}</Text></View>
-              <View style={{flex:1}}><Text numberOfLines={1} style={s.drawerName}>{doctorName}</Text><Text style={s.drawerRole}>Doctor</Text></View>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {(["MAIN","CLINICAL","FINANCE"] as const).map(section=>{
-                const items=visibleMenu.filter(x=>x[3]===section);
-                if(!items.length) return null;
-                return <View key={section} style={{marginTop:13}}>
-                  <Text style={s.menuLabel}>{section}</Text>
-                  {items.map(item=>{
-                    const current=item[1]==="Manage Availability";
-                    return <TouchableOpacity key={item[1]} style={[s.menuItem,current&&s.menuItemActive]} onPress={()=>{
-                      setMenuOpen(false);
-                      if(!current) router.push(item[2] as any);
-                    }}>
-                      <View style={[s.menuItemIcon,current&&{backgroundColor:MINT}]}><Ionicons name={item[0] as any} size={19} color={current?GREEN:GOLD}/></View>
-                      <Text style={[s.menuItemText,current&&{color:GREEN}]}>{item[1]}</Text>
-                      <Ionicons name="chevron-forward" size={15} color={current?GREEN:"#AFC0B6"}/>
-                    </TouchableOpacity>
-                  })}
-                </View>
-              })}
-            </ScrollView>
-            <TouchableOpacity style={s.logout} onPress={()=>{setMenuOpen(false);setConfirm({visible:true,kind:"logout"})}}>
-              <Ionicons name="log-out-outline" size={19} color={WHITE}/><Text style={s.logoutText}>Logout</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+<DoctorDrawer
+  visible={menuOpen}
+  onClose={() => setMenuOpen(false)}
+  activeRoute="/doctor/availability"
+/>
+      
 
       {/* CREATE AVAILABILITY */}
       <BottomSheet visible={formOpen} onClose={()=>setFormOpen(false)} eyebrow="WEEKLY SCHEDULE" title="Create Availability">
@@ -625,16 +703,97 @@ export default function DoctorAvailabilityScreen() {
       />}
 
       {/* CONFIRM */}
-      <Modal visible={confirm.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={()=>setConfirm({visible:false,kind:""})}>
-        <View style={s.centerRoot}><Pressable style={s.backdrop} onPress={()=>setConfirm({visible:false,kind:""})}/><View style={s.confirmCard}>
-          <View style={[s.confirmIcon,{backgroundColor:confirm.kind==="logout"?MINT:DANGER_LIGHT}]}><Ionicons name={confirm.kind==="logout"?"log-out-outline":confirm.kind==="unblock"?"lock-open-outline":"trash-outline"} size={30} color={confirm.kind==="logout"?GREEN:DANGER}/></View>
-          <Text style={s.modalEyebrow}>NEOLIFE DOCTOR PORTAL</Text>
-          <Text style={s.modalTitle}>{confirm.kind==="logout"?"Log Out?":confirm.kind==="unblock"?"Unblock Slot?":"Delete Availability?"}</Text>
-          <Text style={s.modalText}>{confirm.kind==="logout"?"Are you sure you want to leave your doctor workspace?":confirm.kind==="unblock"?"This blocked time will become available again according to your weekly schedule.":"This weekly availability will be removed and patients will no longer be able to book it."}</Text>
-          <View style={s.confirmActions}><TouchableOpacity style={s.secondary} onPress={()=>setConfirm({visible:false,kind:""})}><Text style={s.secondaryText}>Cancel</Text></TouchableOpacity><TouchableOpacity style={[s.primary,{backgroundColor:confirm.kind==="logout"?GREEN:DANGER}]} onPress={performConfirm}><Text style={s.primaryText}>{confirm.kind==="logout"?"Log Out":"Confirm"}</Text></TouchableOpacity></View>
-        </View></View>
-      </Modal>
+<Modal
+  visible={confirm.visible}
+  transparent
+  animationType="fade"
+  statusBarTranslucent
+  onRequestClose={() =>
+    setConfirm({
+      visible: false,
+      kind: "",
+    })
+  }
+>
+  <View style={s.centerRoot}>
+    <Pressable
+      style={s.backdrop}
+      onPress={() =>
+        setConfirm({
+          visible: false,
+          kind: "",
+        })
+      }
+    />
 
+    <View style={s.confirmCard}>
+      <View
+        style={[
+          s.confirmIcon,
+          {
+            backgroundColor: DANGER_LIGHT,
+          },
+        ]}
+      >
+        <Ionicons
+          name={
+            confirm.kind === "unblock"
+              ? "lock-open-outline"
+              : "trash-outline"
+          }
+          size={30}
+          color={DANGER}
+        />
+      </View>
+
+      <Text style={s.modalEyebrow}>
+        NEOLIFE DOCTOR PORTAL
+      </Text>
+
+      <Text style={s.modalTitle}>
+        {confirm.kind === "unblock"
+          ? "Unblock Slot?"
+          : "Delete Availability?"}
+      </Text>
+
+      <Text style={s.modalText}>
+        {confirm.kind === "unblock"
+          ? "This blocked time will become available again according to your weekly schedule."
+          : "This weekly availability will be removed and patients will no longer be able to book it."}
+      </Text>
+
+      <View style={s.confirmActions}>
+        <TouchableOpacity
+          style={s.secondary}
+          onPress={() =>
+            setConfirm({
+              visible: false,
+              kind: "",
+            })
+          }
+        >
+          <Text style={s.secondaryText}>
+            Cancel
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            s.primary,
+            {
+              backgroundColor: DANGER,
+            },
+          ]}
+          onPress={performConfirm}
+        >
+          <Text style={s.primaryText}>
+            Confirm
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  </View>
+</Modal>
       {/* NOTICE */}
       <Modal visible={notice.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={()=>setNotice(v=>({...v,visible:false}))}>
         <View style={s.centerRoot}><Pressable style={s.backdrop} onPress={()=>setNotice(v=>({...v,visible:false}))}/><View style={s.confirmCard}>

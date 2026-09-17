@@ -15,6 +15,8 @@ import {
   View,
 } from "react-native";
 import { API_BASE_URL } from "../../services/api";
+import DoctorHeader from "../../components/DoctorHeader";
+import DoctorDrawer from "../../components/DoctorDrawer";
 
 const GREEN = "#0B3D2E";
 const GREEN_2 = "#14533D";
@@ -56,18 +58,7 @@ type Medicine = {
   saved?: boolean;
 };
 
-const MENU_ITEMS = [
-  { icon: "grid-outline", label: "Dashboard", route: "/doctor/dashboard", section: "MAIN" },
-  { icon: "people-outline", label: "Patients", route: "/doctor/patients", section: "MAIN" },
-  { icon: "calendar-outline", label: "Appointment Calendar", route: "/doctor/calendar", section: "MAIN" },
-  { icon: "calendar-number-outline", label: "Upcoming Schedule", route: "/doctor/schedule", section: "MAIN" },
-  { icon: "time-outline", label: "Manage Availability", route: "/doctor/availability", section: "MAIN" },
-  { icon: "clipboard-outline", label: "Appointment Details", route: "/doctor/appointments", section: "CLINICAL", requiresOffline: true },
-  { icon: "videocam-outline", label: "Consultation Details", route: "/doctor/consultations", section: "CLINICAL", requiresOnline: true },
-  { icon: "document-text-outline", label: "Prescription Pad", route: "/doctor/prescription-pad", section: "CLINICAL" },
-  { icon: "card-outline", label: "Transactions", route: "/doctor/transactions", section: "FINANCE" },
-  { icon: "person-circle-outline", label: "My Profile", route: "/doctor/profile", section: "FINANCE" },
-] as const;
+
 
 const TYPES = ["", "Classical Medicine", "Patented Product", "Folklore Medicine", "Panchakavya"];
 const FORMS = ["", "Syrup", "Kashayam", "Choorna", "Tablet", "Capsule", "Oil", "Cream", "Gel", "Powder", "Drops", "Avaleha", "Arishta", "Other"];
@@ -99,21 +90,35 @@ export default function PrescriptionPadScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
     appointmentId?: string;
+    consultationId?: string;
+    prescriptionId?: string;
     id?: string;
     walkInPatientId?: string;
     patientId?: string;
     source?: string;
   }>();
 
-  const walkInPatientId = params.walkInPatientId ? String(params.walkInPatientId) : "";
+  const walkInPatientId = params.walkInPatientId
+    ? String(params.walkInPatientId)
+    : "";
+  const consultationId = params.consultationId
+    ? String(params.consultationId)
+    : "";
   const isWalkIn = Boolean(walkInPatientId);
-  const appointmentId = isWalkIn ? "" : String(params.appointmentId || params.id || "");
+  const isConsultation = !isWalkIn && Boolean(consultationId);
+  const appointmentId =
+    isWalkIn || isConsultation
+      ? ""
+      : String(params.appointmentId || params.id || "");
+  const requestedPrescriptionId = params.prescriptionId
+    ? String(params.prescriptionId)
+    : "";
   const [doctorName, setDoctorName] = useState("Doctor");
   const [doctorId, setDoctorId] = useState<number | null>(null);
   const [hasOnline, setHasOnline] = useState<boolean | null>(null);
   const [hasOffline, setHasOffline] = useState<boolean | null>(null);
   const [drawer, setDrawer] = useState(false);
-  const [logoutOpen, setLogoutOpen] = useState(false);
+  
 
   const [patient, setPatient] = useState<any>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -123,10 +128,10 @@ export default function PrescriptionPadScreen() {
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [prescriptionId, setPrescriptionId] = useState<number | null>(null);
   const [finalized, setFinalized] = useState(false);
-  const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [sectionFilter, setSectionFilter] = useState("");
   const [formFilter, setFormFilter] = useState("");
   const [manufacturerFilter, setManufacturerFilter] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -272,25 +277,105 @@ export default function PrescriptionPadScreen() {
       };
     });
     setMedicines(rows);
-    setSavedKeys(new Set(rows.map(r=>keyForMedicine(r))));
-    if (String(existing.status||"").toUpperCase()==="FINALIZED") setFinalized(true);
+    setFinalized(String(existing.status || "").toUpperCase() === "FINALIZED");
+  }
+
+  async function loadExistingPrescriptionById(id: string | number) {
+    const result = await api(
+      `/prescriptions/${encodeURIComponent(String(id))}`
+    );
+    const existing = result?.data || null;
+
+    if (!existing?.id) {
+      throw new Error("The saved prescription could not be loaded.");
+    }
+
+    applyExisting(existing);
   }
 
   async function loadWalkIn() {
     const result = await api("/walk-in-patients/doctor/my-patients");
     const records = Array.isArray(result.data) ? result.data : [];
-    const p = records.find((x:any)=>String(x.id ?? x.walkInPatientId)===String(walkInPatientId));
-    if (!p) throw new Error("This walk-in patient is not assigned to the logged-in doctor.");
-    setPatient({ ...p, _kind:"WALK_IN" });
+    const p = records.find(
+      (x: any) =>
+        String(x.id ?? x.walkInPatientId) === String(walkInPatientId)
+    );
+
+    if (!p) {
+      throw new Error(
+        "This walk-in patient is not assigned to the logged-in doctor."
+      );
+    }
+
+    setPatient({ ...p, _kind: "WALK_IN" });
+
+    if (requestedPrescriptionId) {
+      await loadExistingPrescriptionById(requestedPrescriptionId);
+      return;
+    }
 
     const status = String(p.status || "WAITING").toUpperCase();
-    if (status === "IN_PROGRESS" || status === "COMPLETED") {
+
+    if (["IN_PROGRESS", "COMPLETED"].includes(status)) {
       try {
-        const rx = await api(`/prescriptions/walk-in/${encodeURIComponent(walkInPatientId)}`);
-        applyExisting(rx.data);
-      } catch(e:any) {
+        const rx = await api(
+          `/prescriptions/walk-in/${encodeURIComponent(walkInPatientId)}`
+        );
+
+        if (rx?.data?.id) {
+          applyExisting(rx.data);
+        }
+      } catch (e: any) {
         const msg = String(e?.message || "");
-        if (!msg.toLowerCase().includes("appointment id or consultation id is required")) console.log("Walk-in prescription:",msg);
+
+        if (
+          !msg
+            .toLowerCase()
+            .includes("appointment id or consultation id is required")
+        ) {
+          console.log("Walk-in prescription:", msg);
+        }
+      }
+    }
+  }
+
+  async function loadConsultation() {
+    const result = await api(
+      `/consultations/${encodeURIComponent(consultationId)}/get`
+    );
+
+    const c = result?.data;
+
+    if (!c) {
+      throw new Error(
+        "This consultation was not found in the logged-in doctor's consultations."
+      );
+    }
+
+    setPatient({ ...c, _kind: "CONSULTATION" });
+
+    if (requestedPrescriptionId) {
+      await loadExistingPrescriptionById(requestedPrescriptionId);
+      return;
+    }
+
+    // Same website logic: automatically reopen an existing consultation
+    // prescription to avoid creating a second prescription for the same visit.
+    try {
+      const prescriptionResult = await api(
+        `/prescriptions/consultation/${encodeURIComponent(consultationId)}`
+      );
+
+      const existingId = prescriptionResult?.data?.id;
+
+      if (existingId) {
+        await loadExistingPrescriptionById(existingId);
+      }
+    } catch (e: any) {
+      const message = String(e?.message || "");
+
+      if (!/404|not found/i.test(message)) {
+        console.log("Consultation prescription:", message);
       }
     }
   }
@@ -298,46 +383,147 @@ export default function PrescriptionPadScreen() {
   async function loadAppointment() {
     const result = await api("/appointments/doctor/my-appointments");
     const records = extractAppointments(result);
-    const a = records.find((x:any)=>String(x.id ?? x.appointmentId)===String(appointmentId));
-    if (!a) throw new Error("This appointment was not found in the logged-in doctor's appointments.");
-    setPatient({ ...a, _kind:"APPOINTMENT" });
-  }
+    const a = records.find(
+      (x: any) => String(x.id ?? x.appointmentId) === String(appointmentId)
+    );
 
-  async function loadAll(refresh=false) {
-    if (refresh) setRefreshing(true); else setLoading(true);
+    if (!a) {
+      throw new Error(
+        "This appointment was not found in the logged-in doctor's appointments."
+      );
+    }
+
+    setPatient({ ...a, _kind: "APPOINTMENT" });
+
+    if (requestedPrescriptionId) {
+      await loadExistingPrescriptionById(requestedPrescriptionId);
+      return;
+    }
+
+    // Use the prescription API directly. This avoids the doctor 403 from
+    // /patient-records/patient/{patientId}.
     try {
-      if (!(await validateDoctor())) return;
-      if (isWalkIn) {
-        if (!walkInPatientId || Number(walkInPatientId)<=0) throw new Error("Valid Walk-in Patient ID is missing.");
-      } else if (!appointmentId) throw new Error("Appointment ID is missing.");
+      const rx = await api(
+        `/prescriptions/appointment/${encodeURIComponent(String(appointmentId))}`
+      );
 
-      await loadDoctor();
-      await loadProducts();
-      if (isWalkIn) await loadWalkIn(); else await loadAppointment();
-    } catch(e:any) {
-      show("error","Unable to load prescription",e?.message || "Something went wrong.");
-    } finally {
-      setLoading(false); setRefreshing(false);
+      if (rx?.data?.id) {
+        applyExisting(rx.data);
+      }
+    } catch (e: any) {
+      const status = Number(e?.status || 0);
+      const message = String(e?.message || "");
+
+      if (status === 404 || /not found/i.test(message)) {
+        return;
+      }
+
+      throw e;
     }
   }
 
-  useEffect(()=>{ loadAll(); }, [appointmentId, walkInPatientId]);
+  async function loadAll(refresh = false) {
+    if (refresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      if (!(await validateDoctor())) {
+        return;
+      }
+
+      if (isWalkIn) {
+        if (!walkInPatientId || Number(walkInPatientId) <= 0) {
+          throw new Error("Valid Walk-in Patient ID is missing.");
+        }
+      } else if (isConsultation) {
+        if (!consultationId || Number(consultationId) <= 0) {
+          throw new Error("Valid Consultation ID is missing.");
+        }
+      } else if (!appointmentId) {
+        throw new Error("Appointment ID is missing.");
+      }
+
+      await loadDoctor();
+      await loadProducts();
+
+      if (isWalkIn) {
+        await loadWalkIn();
+      } else if (isConsultation) {
+        await loadConsultation();
+      } else {
+        await loadAppointment();
+      }
+    } catch (e: any) {
+      show(
+        "error",
+        "Unable to load prescription",
+        e?.message || "Something went wrong."
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    loadAll();
+  }, [
+    appointmentId,
+    consultationId,
+    walkInPatientId,
+    requestedPrescriptionId,
+  ]);
 
   const manufacturers = useMemo(
-    ()=>Array.from(new Set(products.map(p=>String(p.manufacturerName||"").trim()).filter(Boolean))).sort(),
+    () =>
+      Array.from(
+        new Set(
+          products
+            .map((p) => String(p.manufacturerName || "").trim())
+            .filter(Boolean)
+        )
+      ).sort(),
     [products]
   );
 
-  const filteredProducts = useMemo(()=>{
-    const q=search.trim().toLowerCase();
-    return products.filter(p=>{
-      const n=productName(p).toLowerCase();
-      return (!q || n.includes(q)) &&
-        (!typeFilter || String(p.type||"")===typeFilter) &&
-        (!formFilter || String(p.dosageForm||"")===formFilter) &&
-        (!manufacturerFilter || String(p.manufacturerName||"")===manufacturerFilter);
+  const sections = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          products
+            .map((p) => String(p.section || "").trim())
+            .filter(Boolean)
+        )
+      ).sort(),
+    [products]
+  );
+
+  const filteredProducts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    return products.filter((p) => {
+      const n = productName(p).toLowerCase();
+
+      return (
+        (!q || n.includes(q)) &&
+        (!typeFilter || String(p.type || "") === typeFilter) &&
+        (!sectionFilter || String(p.section || "") === sectionFilter) &&
+        (!formFilter || String(p.dosageForm || "") === formFilter) &&
+        (!manufacturerFilter ||
+          String(p.manufacturerName || "") === manufacturerFilter)
+      );
     });
-  },[products,search,typeFilter,formFilter,manufacturerFilter]);
+  }, [
+    products,
+    search,
+    typeFilter,
+    sectionFilter,
+    formFilter,
+    manufacturerFilter,
+  ]);
 
   function addProduct(p:Product) {
     if (finalized) return;
@@ -368,12 +554,14 @@ export default function PrescriptionPadScreen() {
     setMedicines(prev=>prev.map(m=>m.localId===id ? {...m,[field]:value}:m));
   }
 
-  function removeMedicine(m:Medicine) {
-    if (m.saved) {
-      show("info","Medicine already saved","This medicine is already saved in the draft and cannot be removed from this screen.");
+  function removeMedicine(m: Medicine) {
+    if (finalized) {
       return;
     }
-    setMedicines(prev=>prev.filter(x=>x.localId!==m.localId));
+
+    setMedicines((prev) =>
+      prev.filter((x) => x.localId !== m.localId)
+    );
   }
 
   function validateMedicines() {
@@ -396,27 +584,101 @@ export default function PrescriptionPadScreen() {
   }
 
   async function ensureDraft() {
-    if (!diagnosis.trim() || !advice.trim()) throw new Error("Enter diagnosis and advice first.");
+    if (!diagnosis.trim() || !advice.trim()) {
+      throw new Error("Enter diagnosis and advice first.");
+    }
+
     if (prescriptionId) {
-      await updatePrescriptionDetails(prescriptionId);
-      return prescriptionId;
+      await updatePrescriptionDetails(Number(prescriptionId));
+      return Number(prescriptionId);
     }
-    let body:any;
-    if (isWalkIn) {
-      const id=Number(walkInPatientId);
-      if (!id) throw new Error("Valid Walk-in Patient ID is required.");
-      body={walkInPatientId:id,diagnosis:diagnosis.trim(),advice:advice.trim(),notes:notes.trim()||null};
-    } else {
-      const id=Number(appointmentId);
+
+    if (!isWalkIn && !isConsultation) {
+      const id = Number(appointmentId);
       if (!id) throw new Error("Valid Appointment ID is required.");
-      body={appointmentId:id,diagnosis:diagnosis.trim(),advice:advice.trim(),notes:notes.trim()||null};
+
+      try {
+        const existingResult = await api(
+          `/prescriptions/appointment/${encodeURIComponent(String(id))}`
+        );
+        const existingId = Number(existingResult?.data?.id || 0);
+        if (existingId) {
+          applyExisting(existingResult.data);
+          await updatePrescriptionDetails(existingId);
+          return existingId;
+        }
+      } catch (e: any) {
+        const status = Number(e?.status || 0);
+        const message = String(e?.message || "");
+        if (status !== 404 && !/not found/i.test(message)) throw e;
+      }
+
+      const created = await api("/prescriptions/create", {
+        method: "POST",
+        body: JSON.stringify({
+          appointmentId: id,
+          diagnosis: diagnosis.trim(),
+          advice: advice.trim(),
+          notes: notes.trim() || null,
+        }),
+      });
+      const newId = Number(created?.data?.id || 0);
+      if (!newId) throw new Error("Prescription ID was not returned by the server.");
+      setPrescriptionId(newId);
+      return newId;
     }
-    const endpoint=isWalkIn ? "/prescriptions/walk-in/create" : "/prescriptions/create";
-    const r=await api(endpoint,{method:"POST",body:JSON.stringify(body)});
-    const id=Number(r.data?.id);
-    if (!id) throw new Error("Prescription ID was not returned by the server.");
-    setPrescriptionId(id);
-    return id;
+
+    if (isConsultation) {
+      const id = Number(consultationId);
+      if (!id) throw new Error("Valid Consultation ID is required.");
+
+      try {
+        const existingResult = await api(
+          `/prescriptions/consultation/${encodeURIComponent(String(id))}`
+        );
+        const existingId = Number(existingResult?.data?.id || 0);
+        if (existingId) {
+          applyExisting(existingResult.data);
+          await updatePrescriptionDetails(existingId);
+          return existingId;
+        }
+      } catch (e: any) {
+        const status = Number(e?.status || 0);
+        const message = String(e?.message || "");
+        if (status !== 404 && !/not found/i.test(message)) throw e;
+      }
+
+      const created = await api("/prescriptions/create", {
+        method: "POST",
+        body: JSON.stringify({
+          consultationId: id,
+          diagnosis: diagnosis.trim(),
+          advice: advice.trim(),
+          notes: notes.trim() || null,
+        }),
+      });
+      const newId = Number(created?.data?.id || 0);
+      if (!newId) throw new Error("Prescription ID was not returned by the server.");
+      setPrescriptionId(newId);
+      return newId;
+    }
+
+    const id = Number(walkInPatientId);
+    if (!id) throw new Error("Valid Walk-in Patient ID is required.");
+
+    const created = await api("/prescriptions/walk-in/create", {
+      method: "POST",
+      body: JSON.stringify({
+        walkInPatientId: id,
+        diagnosis: diagnosis.trim(),
+        advice: advice.trim(),
+        notes: notes.trim() || null,
+      }),
+    });
+    const newId = Number(created?.data?.id || 0);
+    if (!newId) throw new Error("Prescription ID was not returned by the server.");
+    setPrescriptionId(newId);
+    return newId;
   }
 
   function payload(m:Medicine) {
@@ -431,24 +693,78 @@ export default function PrescriptionPadScreen() {
     };
   }
 
-  async function saveMedicineItems(id:number) {
-    let next=new Set(savedKeys);
-    for (const m of medicines) {
-      const p=payload(m);
-      const key=keyForMedicine({...m,...p,durationDays:String(p.durationDays),quantity:String(p.quantity)});
-      if (next.has(key)) continue;
-      const r=await api(`/prescriptions/${id}/items`,{method:"POST",body:JSON.stringify(p)});
-      next.add(key);
-      if (Array.isArray(r.data?.items)) {
-        next=new Set(r.data.items.map((x:any)=>JSON.stringify({
-          productId:x.productId??null, medicineName:x.medicineName||"", dosage:x.dosage||"",
-          frequency:x.frequency??null, durationDays:Number(x.durationDays||0),
-          quantity:Number(x.quantity||0), instructions:x.instructions??null
-        })));
+  async function syncMedicineItems(id: number) {
+    // Same website logic:
+    // backend has POST item + DELETE item but no PUT item endpoint.
+    // Remove persisted rows and recreate the complete current medicine list.
+    const currentResult = await api(
+      `/prescriptions/${encodeURIComponent(String(id))}`
+    );
+
+    const persistedItems = Array.isArray(currentResult?.data?.items)
+      ? currentResult.data.items
+      : [];
+
+    for (const persisted of persistedItems) {
+      if (persisted?.id) {
+        await api(
+          `/prescriptions/${encodeURIComponent(
+            String(id)
+          )}/items/${encodeURIComponent(String(persisted.id))}`,
+          { method: "DELETE" }
+        );
       }
     }
-    setSavedKeys(next);
-    setMedicines(prev=>prev.map(m=>({...m,saved:true})));
+
+    for (const medicine of medicines) {
+      await api(
+        `/prescriptions/${encodeURIComponent(String(id))}/items`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload(medicine)),
+        }
+      );
+    }
+
+    const refreshed = await api(
+      `/prescriptions/${encodeURIComponent(String(id))}`
+    );
+
+    const savedItems = Array.isArray(refreshed?.data?.items)
+      ? refreshed.data.items
+      : [];
+
+    const rows: Medicine[] = savedItems.map(
+      (item: any, index: number) => {
+        const productId =
+          item.productId ?? item.product?.id ?? null;
+        const p = products.find(
+          (x) => String(x.id) === String(productId)
+        );
+
+        return {
+          localId: `saved-${item.id || index}-${Date.now()}`,
+          productId:
+            productId !== null ? Number(productId) : null,
+          medicineName:
+            item.medicineName ||
+            item.productName ||
+            item.product?.name ||
+            (p ? productName(p) : ""),
+          dosage: item.dosage || "",
+          frequency: item.frequency || "",
+          durationDays: String(
+            Number(item.durationDays || 1)
+          ),
+          quantity: String(Number(item.quantity || 1)),
+          instructions: item.instructions || "",
+          dosageForm: p?.dosageForm || "",
+          saved: true,
+        };
+      }
+    );
+
+    setMedicines(rows);
   }
 
   async function saveDraft() {
@@ -459,7 +775,7 @@ export default function PrescriptionPadScreen() {
     setBusy("draft");
     try {
       const id=await ensureDraft();
-      await saveMedicineItems(id);
+      await syncMedicineItems(id);
       await updatePrescriptionDetails(id);
       show("success","Draft saved",`Prescription draft #${id} was saved successfully.`);
     } catch(e:any) {
@@ -475,7 +791,7 @@ export default function PrescriptionPadScreen() {
     setBusy("finalize");
     try {
       const id=await ensureDraft();
-      await saveMedicineItems(id);
+      await syncMedicineItems(id);
       await updatePrescriptionDetails(id);
       const endpoint=isWalkIn
         ? `/prescriptions/walk-in/${encodeURIComponent(String(id))}/finalize`
@@ -483,40 +799,76 @@ export default function PrescriptionPadScreen() {
       const result=await api(endpoint,{method:"PUT"});
       setFinalized(true);
       show("success","Prescription finalized",result.message || "Prescription finalized successfully.");
-      setTimeout(()=>{
-        if (isWalkIn) router.replace({pathname:"/doctor/patients" as any,params:{view:"walkin",prescriptionCompleted:"true",walkInPatientId}} as any);
-        else router.replace({pathname:"/doctor/appointments" as any,params:{prescriptionCompleted:"true",appointmentId}} as any);
-      },1000);
+      setTimeout(() => {
+        if (isWalkIn) {
+          router.replace({
+            pathname: "/doctor/patients" as any,
+            params: {
+              view: "walkin",
+              prescriptionCompleted: "true",
+              walkInPatientId,
+            },
+          } as any);
+        } else if (isConsultation) {
+          router.replace({
+            pathname: "/doctor/consultations" as any,
+            params: {
+              consultationId,
+              prescriptionCompleted: "true",
+            },
+          } as any);
+        } else {
+          router.replace({
+            pathname: "/doctor/appointments" as any,
+            params: {
+              prescriptionCompleted: "true",
+              appointmentId,
+            },
+          } as any);
+        }
+      }, 1000);
     } catch(e:any) {
       show("error","Unable to finalize",e?.message || "Unable to finalize prescription.");
     } finally { setBusy(null); }
   }
 
-  async function logout() {
-    setLogoutOpen(false);
-    await clearSession();
-    router.replace("/login" as any);
-  }
+ 
 
-  const displayName = isWalkIn ? (patient?.name || patient?.patientName || "Walk-in Patient") : (patient?.patientName || "Patient");
+  const displayName = isWalkIn
+    ? patient?.name || patient?.patientName || "Walk-in Patient"
+    : patient?.patientName || "Patient";
+
   const phone = patient?.phoneNumber || "-";
-  const date = isWalkIn ? patient?.appointmentDate : patient?.appointmentDate;
-  const start = patient?.startTime;
+  const date = isConsultation
+    ? patient?.consultationDate || patient?.date
+    : patient?.appointmentDate || patient?.date;
+  const start =
+    patient?.startTime || patient?.consultationTime;
   const end = patient?.endTime;
-  const status = patient?.status || (isWalkIn ? "WAITING" : "-");
+  const status =
+    patient?.status || (isWalkIn ? "WAITING" : "-");
   const symptoms = patient?.symptoms || "";
   const history = patient?.pastMedicalHistory || "";
-  const doctor = isWalkIn ? doctorName : (patient?.doctorName || doctorName);
-  const specialization = isWalkIn ? "Walk-in Patient" : (patient?.doctorSpecialization || "-");
-  const mode = isWalkIn ? "Walk-in" : formatValue(patient?.appointmentMode);
-  const payment = isWalkIn ? "Not Required" : formatValue(patient?.paymentStatus);
+  const doctor = isWalkIn
+    ? doctorName
+    : patient?.doctorName || doctorName;
+  const specialization = isWalkIn
+    ? "Walk-in Patient"
+    : isConsultation
+      ? patient?.doctorSpecialization ||
+        patient?.specialization ||
+        "Online Consultation"
+      : patient?.doctorSpecialization || "-";
+  const mode = isWalkIn
+    ? "Walk-in"
+    : isConsultation
+      ? "Online"
+      : formatValue(patient?.appointmentMode);
+  const payment = isWalkIn
+    ? "Not Required"
+    : formatValue(patient?.paymentStatus);
 
-  const visibleMenu = MENU_ITEMS.filter(x=>{
-    if ("requiresOnline" in x && x.requiresOnline && hasOnline===false) return false;
-    if ("requiresOffline" in x && x.requiresOffline && hasOffline===false) return false;
-    return true;
-  });
-
+ 
   if (loading) return (
     <View style={s.loading}>
       <View style={s.loadingIcon}><Ionicons name="document-text-outline" size={30} color={GOLD}/></View>
@@ -528,16 +880,10 @@ export default function PrescriptionPadScreen() {
 
   return (
     <View style={s.screen}>
-      <View style={s.header}>
-        <Pressable style={s.headerBtn} onPress={()=>setDrawer(true)}><Ionicons name="menu" size={23} color={GREEN}/></Pressable>
-        <View style={{flex:1}}>
-          <Text style={s.portal}>DOCTOR PORTAL</Text>
-          <Text style={s.headerTitle}>Prescription Pad</Text>
-        </View>
-        <Pressable style={s.avatar} onPress={()=>router.push("/doctor/profile" as any)}>
-          <Text style={s.avatarText}>{doctorName.charAt(0).toUpperCase()}</Text>
-        </Pressable>
-      </View>
+      <DoctorHeader
+  title="Prescription Pad"
+  onMenuPress={() => setDrawer(true)}
+/>
 
       <ScrollView
         style={{flex:1}}
@@ -547,7 +893,13 @@ export default function PrescriptionPadScreen() {
       >
         <View style={s.hero}>
           <View style={{flex:1}}>
-            <Text style={s.heroEyebrow}>{isWalkIn ? "WALK-IN PRESCRIPTION" : "DIGITAL PRESCRIPTION"}</Text>
+            <Text style={s.heroEyebrow}>
+              {isWalkIn
+                ? "WALK-IN PRESCRIPTION"
+                : isConsultation
+                  ? "ONLINE CONSULTATION PRESCRIPTION"
+                  : "DIGITAL PRESCRIPTION"}
+            </Text>
             <Text style={s.heroTitle}>Prescribe with clarity.</Text>
             <Text style={s.heroText}>Review the patient, record clinical notes, select medicines and finalize securely.</Text>
           </View>
@@ -565,7 +917,17 @@ export default function PrescriptionPadScreen() {
           </View>
           <View style={s.infoGrid}>
             <Info icon="person-outline" label="Age / Gender" value={`${patient?.age ?? "-"} / ${formatValue(patient?.gender)}`}/>
-            <Info icon="calendar-outline" label={isWalkIn ? "Visit Date" : "Appointment"} value={formatDate(date)}/>
+            <Info
+              icon="calendar-outline"
+              label={
+                isWalkIn
+                  ? "Visit Date"
+                  : isConsultation
+                    ? "Consultation"
+                    : "Appointment"
+              }
+              value={formatDate(date)}
+            />
             <Info icon="time-outline" label="Time" value={end ? `${time(start)} - ${time(end)}` : time(start)}/>
             <Info icon="medical-outline" label="Mode" value={mode}/>
           </View>
@@ -622,7 +984,16 @@ export default function PrescriptionPadScreen() {
           ))}
         </Section>
 
-        <Section title="Appointment Information" subtitle="Loaded securely from the backend.">
+        <Section
+          title={
+            isWalkIn
+              ? "Visit Information"
+              : isConsultation
+                ? "Consultation Information"
+                : "Appointment Information"
+          }
+          subtitle="Loaded securely from the backend."
+        >
           <DetailRow icon="person-outline" label="Doctor" value={doctor}/>
           <DetailRow icon="ribbon-outline" label="Specialization" value={specialization}/>
           <DetailRow icon="medical-outline" label="Mode" value={mode}/>
@@ -636,7 +1007,16 @@ export default function PrescriptionPadScreen() {
         </Section>
 
         <View style={s.actions}>
-          <Pressable style={s.secondary} onPress={()=>isWalkIn ? router.replace("/doctor/patients" as any) : router.replace("/doctor/appointments" as any)}>
+          <Pressable
+            style={s.secondary}
+            onPress={() =>
+              isWalkIn
+                ? router.replace("/doctor/patients" as any)
+                : isConsultation
+                  ? router.replace("/doctor/consultations" as any)
+                  : router.replace("/doctor/appointments" as any)
+            }
+          >
             <Ionicons name="arrow-back" size={18} color={GREEN}/><Text style={s.secondaryText}>Back</Text>
           </Pressable>
           <Pressable style={[s.secondary,busy&&s.disabled]} onPress={saveDraft} disabled={Boolean(busy)||finalized}>
@@ -650,40 +1030,11 @@ export default function PrescriptionPadScreen() {
         </View>
       </ScrollView>
 
-      <Modal visible={drawer} transparent animationType="fade" onRequestClose={()=>setDrawer(false)}>
-        <View style={s.drawerOverlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={()=>setDrawer(false)}/>
-          <View style={s.drawer}>
-            <View style={s.drawerBrand}>
-              <View style={s.brandLogo}><Text style={s.brandLogoText}>N</Text></View>
-              <View><Text style={s.brandName}>NeoLife</Text><Text style={s.brandSub}>DOCTOR PORTAL</Text></View>
-              <Pressable style={s.drawerClose} onPress={()=>setDrawer(false)}><Ionicons name="close" size={21} color={WHITE}/></Pressable>
-            </View>
-            <ScrollView contentContainerStyle={{padding:14}}>
-              {["MAIN","CLINICAL","FINANCE"].map(section=>(
-                <View key={section}>
-                  <Text style={s.menuSection}>{section}</Text>
-                  {visibleMenu.filter(x=>x.section===section).map(item=>{
-                    const active=item.label==="Prescription Pad";
-                    return (
-                      <Pressable key={item.label} style={[s.menuItem,active&&s.menuActive]} onPress={()=>{
-                        setDrawer(false);
-                        if (!active) router.push(item.route as any);
-                      }}>
-                        <Ionicons name={item.icon as any} size={19} color={active?GOLD:WHITE}/>
-                        <Text style={[s.menuText,active&&s.menuActiveText]}>{item.label}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              ))}
-            </ScrollView>
-            <Pressable style={s.logout} onPress={()=>setLogoutOpen(true)}>
-              <Ionicons name="log-out-outline" size={20} color={WHITE}/><Text style={s.logoutText}>Logout</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <DoctorDrawer
+  visible={drawer}
+  onClose={() => setDrawer(false)}
+  activeRoute="/doctor/prescription-pad"
+/>
 
       <Modal visible={filtersOpen} transparent animationType="slide" onRequestClose={()=>setFiltersOpen(false)}>
         <View style={s.sheetOverlay}>
@@ -692,14 +1043,59 @@ export default function PrescriptionPadScreen() {
             <View style={s.sheetHandle}/>
             <Text style={s.sheetTitle}>Medicine Filters</Text>
             <Text style={s.sheetSub}>Narrow the catalogue using product details.</Text>
-            <Choice label="Type" value={typeFilter} options={TYPES} labels={["All Types","Classical","Patented","Folklore","Panchakavya"]} onChange={setTypeFilter}/>
-            <Choice label="Dosage Form" value={formFilter} options={FORMS} labels={FORMS.map(x=>x||"All Forms")} onChange={setFormFilter}/>
+            <Choice
+              label="Type"
+              value={typeFilter}
+              options={TYPES}
+              labels={[
+                "All Types",
+                "Classical",
+                "Patented",
+                "Folklore",
+                "Panchakavya",
+              ]}
+              onChange={setTypeFilter}
+            />
+
+            <Text style={[s.label, { marginTop: 18 }]}>
+              Section
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8 }}
+            >
+              {["", ...sections].map((x) => (
+                <Chip
+                  key={x || "all-section"}
+                  text={x || "All Sections"}
+                  active={sectionFilter === x}
+                  onPress={() => setSectionFilter(x)}
+                />
+              ))}
+            </ScrollView>
+
+            <Choice
+              label="Dosage Form"
+              value={formFilter}
+              options={FORMS}
+              labels={FORMS.map((x) => x || "All Forms")}
+              onChange={setFormFilter}
+            />
             <Text style={s.label}>Manufacturer</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>
               {["",...manufacturers].map(x=><Chip key={x||"all"} text={x||"All"} active={manufacturerFilter===x} onPress={()=>setManufacturerFilter(x)}/>)}
             </ScrollView>
             <View style={s.sheetActions}>
-              <Pressable style={s.secondary} onPress={()=>{setTypeFilter("");setFormFilter("");setManufacturerFilter("");}}>
+              <Pressable
+                style={s.secondary}
+                onPress={() => {
+                  setTypeFilter("");
+                  setSectionFilter("");
+                  setFormFilter("");
+                  setManufacturerFilter("");
+                }}
+              >
                 <Text style={s.secondaryText}>Reset</Text>
               </Pressable>
               <Pressable style={s.primary} onPress={()=>setFiltersOpen(false)}><Text style={s.primaryText}>Apply Filters</Text></Pressable>
@@ -712,9 +1108,7 @@ export default function PrescriptionPadScreen() {
         message="After finalizing, this prescription becomes read-only. Verify the diagnosis, advice and all medicine details before continuing."
         confirm="Finalize Prescription" onCancel={()=>setConfirmFinalize(false)} onConfirm={finalize}/>
 
-      <ConfirmModal visible={logoutOpen} title="Logout from Doctor Portal?"
-        message="You will need to sign in again to access your doctor dashboard."
-        confirm="Logout" danger onCancel={()=>setLogoutOpen(false)} onConfirm={logout}/>
+      
 
       <NoticeModal notice={notice} onClose={()=>setNotice(null)}/>
     </View>
@@ -738,13 +1132,24 @@ function Field(props:any) {
   </View>;
 }
 function MedicineCard({medicine:m,index,finalized,onChange,onRemove}:any) {
-  const locked=finalized || m.saved;
+  const locked = finalized;
   return <View style={s.medCard}>
     <View style={s.medHead}>
       <View style={s.medNumber}><Text style={s.medNumberText}>{index+1}</Text></View>
       <View style={{flex:1}}><Text style={s.medTitle}>{m.medicineName || "Custom Medicine"}</Text><Text style={s.medMeta}>{m.dosageForm || (m.productId?"Catalogue medicine":"Custom entry")}</Text></View>
-      {m.saved?<View style={s.savedPill}><Ionicons name="checkmark" size={12} color={GREEN}/><Text style={s.savedText}>Saved</Text></View>:
-      !finalized?<Pressable style={s.trash} onPress={onRemove}><Ionicons name="trash-outline" size={18} color={DANGER}/></Pressable>:null}
+      <View style={{flexDirection:"row",alignItems:"center",gap:6}}>
+        {m.saved ? (
+          <View style={s.savedPill}>
+            <Ionicons name="checkmark" size={12} color={GREEN}/>
+            <Text style={s.savedText}>Saved</Text>
+          </View>
+        ) : null}
+        {!finalized ? (
+          <Pressable style={s.trash} onPress={onRemove}>
+            <Ionicons name="trash-outline" size={18} color={DANGER}/>
+          </Pressable>
+        ) : null}
+      </View>
     </View>
     {!m.productId && <Field label="Medicine Name *" value={m.medicineName} onChangeText={(v:string)=>onChange("medicineName",v)} placeholder="Medicine name" editable={!locked}/>}
     <Field label="Dosage *" value={m.dosage} onChangeText={(v:string)=>onChange("dosage",v)} placeholder="e.g. 10 ml" editable={!finalized}/>

@@ -1,5 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import {
   DMSans_400Regular,
   DMSans_500Medium,
@@ -12,6 +14,7 @@ import {
   useFonts as usePlayfair,
 } from "@expo-google-fonts/playfair-display";
 import { router } from "expo-router";
+import RazorpayCheckout from "react-native-razorpay";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -105,6 +108,7 @@ type AppointmentRecord = {
   meetingStatus?: string;
   roomId?: string | null;
   prescriptionId?: number | null;
+  prescription?: any | null;
   reviewAllowed?: boolean;
 };
 
@@ -144,6 +148,10 @@ export default function MyAppointmentsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [details, setDetails] = useState<AppointmentRecord | null>(null);
+  const [selectedPrescription, setSelectedPrescription] = useState<any | null>(null);
+  const [prescriptionDownloading, setPrescriptionDownloading] =
+  useState(false);
+  const [prescriptionLoading, setPrescriptionLoading] = useState(false);
 
   const [notice, setNotice] = useState<NoticeState>({
     visible: false,
@@ -313,12 +321,10 @@ export default function MyAppointmentsScreen() {
     const { text, result } = await readResponse(response);
 
     if (response.status === 401 || response.status === 403) {
-      if (response.status === 401) {
-        await clearAuthentication();
-      }
+      await clearAuthentication();
 
       const error: any = new Error(
-        result?.message || "You are not authorized to view these records."
+        result?.message || "Your session has expired."
       );
       error.auth = true;
       throw error;
@@ -354,13 +360,19 @@ export default function MyAppointmentsScreen() {
         return;
       }
 
-      const [appointmentResult, consultationResult] = await Promise.allSettled([
+      const [
+        appointmentResult,
+        consultationResult,
+        prescriptionResult,
+      ] = await Promise.allSettled([
         fetchPatientRecords("/appointments/my-appointments"),
         fetchPatientRecords("/consultations/my-consultations"),
+        fetchPatientRecords("/prescriptions/my-prescriptions"),
       ]);
 
       let appointments: any[] = [];
       let consultations: any[] = [];
+      let prescriptions: any[] = [];
       const errors: string[] = [];
       let authError = false;
 
@@ -384,6 +396,10 @@ export default function MyAppointmentsScreen() {
         authError = authError || Boolean(consultationResult.reason?.auth);
       }
 
+      if (prescriptionResult.status === "fulfilled") {
+        prescriptions = prescriptionResult.value;
+      }
+
       if (authError && !appointments.length && !consultations.length) {
         showNotice(
           "error",
@@ -394,13 +410,38 @@ export default function MyAppointmentsScreen() {
         return;
       }
 
-      const normalizedRecords: AppointmentRecord[] = [
+      let normalizedRecords: AppointmentRecord[] = [
         ...appointments.map(normalizeAppointment),
         ...consultations.map(normalizeConsultation),
       ];
 
+      // Same website logic: match each appointment/consultation to the
+      // patient's prescription list so the prescription action appears
+      // consistently even when the visit response itself has no prescriptionId.
+      normalizedRecords = normalizedRecords.map((record) => {
+        const prescription = prescriptions.find((item: any) =>
+          record.recordType === "APPOINTMENT"
+            ? Number(item?.appointmentId) === Number(record.id)
+            : Number(item?.consultationId) === Number(record.id)
+        );
+
+        return prescription
+          ? {
+              ...record,
+              prescriptionId: Number(prescription.id),
+              prescription,
+            }
+          : record;
+      });
+
       const withMeetings = await loadMeetingStates(normalizedRecords);
       const withRefunds = await loadRefundStatuses(withMeetings);
+
+      withRefunds.sort(
+        (a, b) =>
+          buildAppointmentDateTime(b).getTime() -
+          buildAppointmentDateTime(a).getTime()
+      );
 
       setRecords(withRefunds);
 
@@ -540,6 +581,53 @@ export default function MyAppointmentsScreen() {
     }
   }
 
+  async function verifyRazorpayPayment(response: {
+    razorpay_payment_id: string;
+    razorpay_order_id: string;
+    razorpay_signature: string;
+  }) {
+    const token = await getToken();
+
+    if (!token) {
+      throw new Error("Please sign in to continue.");
+    }
+
+    const responseValue = await fetch(
+      `${API_BASE_URL}/payments/razorpay/verify`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          razorpayPaymentId: response.razorpay_payment_id,
+          razorpayOrderId: response.razorpay_order_id,
+          razorpaySignature: response.razorpay_signature,
+        }),
+      }
+    );
+
+    const { text, result } = await readResponse(responseValue);
+
+    if (!responseValue.ok || result?.success === false) {
+      throw new Error(
+        result?.message ||
+          text ||
+          "Unable to verify payment."
+      );
+    }
+
+    if (result?.data?.signatureVerified !== true) {
+      throw new Error(
+        "Payment signature verification failed."
+      );
+    }
+
+    return result;
+  }
+
   async function startPayment(item: AppointmentRecord) {
     try {
       setBusyId(item.id);
@@ -558,12 +646,8 @@ export default function MyAppointmentsScreen() {
 
       const endpoint =
         item.recordType === "APPOINTMENT"
-          ? `/payments/appointment/${encodeURIComponent(
-              String(item.id)
-            )}/initiate`
-          : `/payments/consultation/${encodeURIComponent(
-              String(item.id)
-            )}/initiate`;
+          ? `/payments/appointment/${encodeURIComponent(String(item.id))}/initiate`
+          : `/payments/consultation/${encodeURIComponent(String(item.id))}/initiate`;
 
       const headers = await authHeaders();
 
@@ -581,27 +665,71 @@ export default function MyAppointmentsScreen() {
       }
 
       const paymentData = result?.data || {};
-      const checkoutUrl =
-        paymentData.checkoutUrl ||
-        paymentData.paymentUrl ||
-        paymentData.shortUrl ||
-        "";
 
-      if (checkoutUrl) {
-        await Linking.openURL(checkoutUrl);
-        return;
+      if (
+        !paymentData.keyId ||
+        !paymentData.razorpayOrderId ||
+        paymentData.amount === undefined ||
+        paymentData.amount === null
+      ) {
+        throw new Error(
+          "Razorpay payment details are incomplete. Please try again."
+        );
       }
 
+      const options = {
+        key: String(paymentData.keyId),
+        amount: Number(paymentData.amount),
+        currency: paymentData.currency || "INR",
+        name: paymentData.name || "NeoLife Wellness Center",
+        description:
+          paymentData.description ||
+          (item.recordType === "CONSULTATION"
+            ? "NeoLife Online Consultation"
+            : "NeoLife Clinic Appointment"),
+        order_id: String(paymentData.razorpayOrderId),
+        prefill: {
+          name: paymentData.customerName || item.patientName || "",
+          email: paymentData.customerEmail || "",
+          contact: paymentData.customerPhone || item.phoneNumber || "",
+        },
+        notes: {
+          ...(paymentData.notes || {}),
+          recordId: String(item.id),
+          recordType: item.recordType,
+        },
+        theme: { color: GREEN },
+      };
+
+      console.log("RAZORPAY NATIVE OPTIONS:", options);
+
+      const razorpayResponse = await RazorpayCheckout.open(options);
+
+      console.log("RAZORPAY NATIVE SUCCESS:", razorpayResponse);
+
+      await verifyRazorpayPayment(razorpayResponse);
+
       showNotice(
-        "info",
-        "Payment Initiated",
-        "The backend payment order was created successfully. Your website opens Razorpay using browser JavaScript; Expo Go cannot run that same checkout script directly. Connect your React Native Razorpay checkout to this returned payment data to complete payment inside the app."
+        "success",
+        "Payment Successful",
+        item.recordType === "CONSULTATION"
+          ? "Your ₹200 online consultation payment was completed and verified successfully."
+          : "Your appointment payment was completed and verified successfully."
       );
+
+      await loadPage(true);
     } catch (error: any) {
+      console.log("RAZORPAY NATIVE ERROR:", error);
+
+      const message =
+        error?.description ||
+        error?.message ||
+        "The payment was cancelled or could not be completed.";
+
       showNotice(
         "error",
-        "Payment Could Not Start",
-        error?.message || "Unable to initiate payment."
+        "Payment Not Completed",
+        message
       );
     } finally {
       setBusyId(null);
@@ -771,16 +899,175 @@ export default function MyAppointmentsScreen() {
     } as any);
   }
 
-  function viewPrescription(item: AppointmentRecord) {
-    if (!item.prescriptionId) return;
+  async function viewPrescription(item: AppointmentRecord) {
+    const summary = item.prescription || null;
+    const id = summary?.id ?? item.prescriptionId;
 
-    router.push({
-      pathname: "/my-prescriptions" as any,
-      params: {
-        id: String(item.prescriptionId),
-      },
-    } as any);
+    if (!id) {
+      showNotice(
+        "info",
+        "Prescription Not Available",
+        "No prescription was found for this appointment or consultation."
+      );
+      return;
+    }
+
+    // Open the modal immediately with the prescription summary already loaded
+    // from /prescriptions/my-prescriptions, then refresh it with the full
+    // patient-accessible prescription details.
+    setSelectedPrescription({
+      ...(summary || {}),
+      id,
+      patientName: summary?.patientName || item.patientName,
+      doctorName: summary?.doctorName || item.doctorName,
+    });
+    setPrescriptionLoading(true);
+
+    try {
+      const headers = await authHeaders();
+
+      const response = await fetch(
+        `${API_BASE_URL}/prescriptions/${encodeURIComponent(String(id))}`,
+        {
+          method: "GET",
+          headers,
+        }
+      );
+
+      const { text, result } = await readResponse(response);
+
+      if (response.status === 401 || response.status === 403) {
+        if (response.status === 401) {
+          await clearAuthentication();
+        }
+
+        throw new Error(
+          result?.message || "You are not authorized to view this prescription."
+        );
+      }
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(
+          result?.message ||
+            text ||
+            "Unable to load prescription details."
+        );
+      }
+
+      const fullPrescription = result?.data || summary;
+
+      setSelectedPrescription({
+        ...(summary || {}),
+        ...(fullPrescription || {}),
+        id,
+        patientName:
+          fullPrescription?.patientName ||
+          summary?.patientName ||
+          item.patientName,
+        doctorName:
+          fullPrescription?.doctorName ||
+          summary?.doctorName ||
+          item.doctorName,
+      });
+    } catch (error: any) {
+      // Keep the summary modal visible if the list API already supplied usable
+      // prescription data; otherwise close it and show the error.
+      if (!summary) {
+        setSelectedPrescription(null);
+      }
+
+      showNotice(
+        "error",
+        "Unable to Load Prescription",
+        error?.message || "Unable to load prescription details."
+      );
+    } finally {
+      setPrescriptionLoading(false);
+    }
   }
+
+  async function downloadPrescription() {
+  if (!selectedPrescription?.id) {
+    showNotice(
+      "info",
+      "Prescription Not Available",
+      "Prescription information is not available for download."
+    );
+    return;
+  }
+
+  try {
+    setPrescriptionDownloading(true);
+
+    const token = await getToken();
+
+    if (!token) {
+      showNotice(
+        "info",
+        "Login Required",
+        "Please sign in to download your prescription.",
+        "LOGIN"
+      );
+      return;
+    }
+
+    const prescriptionId = encodeURIComponent(
+      String(selectedPrescription.id)
+    );
+
+    const downloadUrl =
+      `${API_BASE_URL}/prescriptions/${prescriptionId}/download`;
+
+    const fileName = `NeoLife-Prescription-RX-${prescriptionId}.pdf`;
+
+    const fileUri =
+      (FileSystem as any).documentDirectory + fileName;
+
+    const result = await FileSystem.downloadAsync(
+      downloadUrl,
+      fileUri,
+      {
+        headers: {
+          Accept: "application/pdf",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    if (result.status < 200 || result.status >= 300) {
+      throw new Error(
+        `Unable to download prescription. Server returned ${result.status}.`
+      );
+    }
+
+    const canShare = await Sharing.isAvailableAsync();
+
+    if (canShare) {
+      await Sharing.shareAsync(result.uri, {
+        mimeType: "application/pdf",
+        dialogTitle: "Download Prescription",
+        UTI: "com.adobe.pdf",
+      });
+    } else {
+      showNotice(
+        "success",
+        "Prescription Downloaded",
+        "Your prescription PDF has been downloaded successfully."
+      );
+    }
+  } catch (error: any) {
+    console.log("DOWNLOAD PRESCRIPTION ERROR:", error);
+
+    showNotice(
+      "error",
+      "Download Failed",
+      error?.message ||
+        "Unable to download your prescription. Please try again."
+    );
+  } finally {
+    setPrescriptionDownloading(false);
+  }
+}
 
   async function openURL(url: string) {
     try {
@@ -1202,6 +1489,222 @@ export default function MyAppointmentsScreen() {
         </View>
       </Modal>
 
+      {/* PRESCRIPTION MODAL — same information shown on the website */}
+      <Modal
+        visible={Boolean(selectedPrescription)}
+        transparent
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={() => setSelectedPrescription(null)}
+      >
+        <View style={styles.rxModalRoot}>
+          <Pressable
+            style={styles.rxBackdrop}
+            onPress={() => setSelectedPrescription(null)}
+          />
+
+          <View style={styles.rxSheet}>
+            <View style={styles.rxHandle} />
+
+            <View style={styles.rxHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rxBrand}>NEOLIFE WELLNESS CENTER</Text>
+                <Text style={styles.rxTitle}>Digital Prescription</Text>
+                <Text style={styles.rxReference}>
+                  Finalized prescription · RX-{selectedPrescription?.id || "-"}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.rxClose}
+                onPress={() => setSelectedPrescription(null)}
+              >
+                <Ionicons name="close" size={22} color={GREEN} />
+              </TouchableOpacity>
+            </View>
+
+            {prescriptionLoading ? (
+              <View style={styles.rxLoading}>
+                <ActivityIndicator size="small" color={GREEN} />
+                <Text style={styles.rxLoadingText}>
+                  Loading prescription details...
+                </Text>
+              </View>
+            ) : null}
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.rxScroll}
+            >
+              <View style={styles.rxMetaGrid}>
+                <PrescriptionMeta
+                  icon="person-outline"
+                  label="Patient"
+                  value={
+                    selectedPrescription?.patientName ||
+                    "Patient"
+                  }
+                />
+                <PrescriptionMeta
+                  icon="medkit-outline"
+                  label="Doctor"
+                  value={
+                    selectedPrescription?.doctorName ||
+                    "NeoLife Doctor"
+                  }
+                />
+                <PrescriptionMeta
+                  icon="calendar-outline"
+                  label="Issued"
+                  value={formatDate(
+                    selectedPrescription?.finalizedAt ||
+                      selectedPrescription?.createdAt
+                  )}
+                />
+                <PrescriptionMeta
+                  icon="checkmark-circle-outline"
+                  label="Status"
+                  value={formatStatus(
+                    selectedPrescription?.status ||
+                      "FINALIZED"
+                  )}
+                />
+              </View>
+
+              <View style={styles.rxClinicalSection}>
+                <PrescriptionTextCard
+                  icon="fitness-outline"
+                  label="Diagnosis"
+                  value={
+                    selectedPrescription?.diagnosis ||
+                    "Not provided"
+                  }
+                />
+
+                <PrescriptionTextCard
+                  icon="clipboard-outline"
+                  label="Treatment Advice"
+                  value={
+                    selectedPrescription?.advice ||
+                    "Not provided"
+                  }
+                />
+
+                {selectedPrescription?.notes ? (
+                  <PrescriptionTextCard
+                    icon="document-text-outline"
+                    label="Additional Notes"
+                    value={selectedPrescription.notes}
+                  />
+                ) : null}
+              </View>
+
+              <View style={styles.rxMedicineHeader}>
+                <View style={styles.rxMedicineHeadingLeft}>
+                  <View style={styles.rxSymbol}>
+                    <Text style={styles.rxSymbolText}>Rx</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.rxMedicineEyebrow}>
+                      PRESCRIPTION
+                    </Text>
+                    <Text style={styles.rxMedicineTitle}>
+                      Medicines
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.rxCountPill}>
+                  <Text style={styles.rxCountText}>
+                    {selectedPrescription?.items?.length || 0} prescribed
+                  </Text>
+                </View>
+              </View>
+
+              {!selectedPrescription?.items?.length ? (
+                <View style={styles.rxEmpty}>
+                  <Ionicons
+                    name="medical-outline"
+                    size={25}
+                    color={GOLD_DARK}
+                  />
+                  <Text style={styles.rxEmptyTitle}>
+                    No medicines added
+                  </Text>
+                  <Text style={styles.rxEmptyText}>
+                    No medicines were added to this prescription.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.rxMedicineList}>
+                  {selectedPrescription.items.map(
+                    (medicine: any, index: number) => (
+                      <PrescriptionMedicineCard
+                        key={
+                          medicine?.id ||
+                          `${medicine?.medicineName || "medicine"}-${index}`
+                        }
+                        medicine={medicine}
+                        index={index}
+                      />
+                    )
+                  )}
+                </View>
+              )}
+
+              <View style={styles.rxDisclaimer}>
+                <Ionicons
+                  name="information-circle-outline"
+                  size={18}
+                  color={INFO}
+                />
+                <Text style={styles.rxDisclaimerText}>
+                  This prescription is intended only for the patient named above.
+                </Text>
+              </View>
+              <TouchableOpacity
+  style={[
+    styles.rxDownloadButton,
+    prescriptionDownloading && styles.rxDownloadButtonDisabled,
+  ]}
+  onPress={downloadPrescription}
+  activeOpacity={0.86}
+  disabled={prescriptionDownloading}
+>
+  {prescriptionDownloading ? (
+    <ActivityIndicator size="small" color={GREEN} />
+  ) : (
+    <Ionicons
+      name="download-outline"
+      size={20}
+      color={GREEN}
+    />
+  )}
+
+  <Text style={styles.rxDownloadText}>
+    {prescriptionDownloading
+      ? "Downloading Prescription..."
+      : "Download Prescription"}
+  </Text>
+</TouchableOpacity>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.rxDoneButton}
+              onPress={() => setSelectedPrescription(null)}
+              activeOpacity={0.86}
+            >
+              <Text style={styles.rxDoneText}>Close Prescription</Text>
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={18}
+                color={WHITE}
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* CANCEL / RESCHEDULE MODAL */}
       <Modal
         visible={actionModal.visible}
@@ -1425,6 +1928,141 @@ export default function MyAppointmentsScreen() {
   );
 }
 
+
+function PrescriptionMeta({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.rxMetaCard}>
+      <View style={styles.rxMetaIcon}>
+        <Ionicons name={icon} size={16} color={GREEN} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.rxMetaLabel}>{label}</Text>
+        <Text style={styles.rxMetaValue} numberOfLines={2}>
+          {value || "-"}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function PrescriptionTextCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.rxTextCard}>
+      <View style={styles.rxTextTop}>
+        <View style={styles.rxTextIcon}>
+          <Ionicons name={icon} size={16} color={GREEN} />
+        </View>
+        <Text style={styles.rxTextLabel}>{label}</Text>
+      </View>
+
+      <Text style={styles.rxTextValue}>{value || "Not provided"}</Text>
+    </View>
+  );
+}
+
+function PrescriptionMedicineCard({
+  medicine,
+  index,
+}: {
+  medicine: any;
+  index: number;
+}) {
+  const medicineName =
+    medicine?.medicineName ||
+    medicine?.productName ||
+    medicine?.product?.name ||
+    "Medicine";
+
+  return (
+    <View style={styles.rxMedicineCard}>
+      <View style={styles.rxMedicineTop}>
+        <View style={styles.rxMedicineNumber}>
+          <Text style={styles.rxMedicineNumberText}>{index + 1}</Text>
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <Text style={styles.rxMedicineName}>{medicineName}</Text>
+          <Text style={styles.rxMedicineDose}>
+            {[medicine?.dosage, medicine?.frequency]
+              .filter(Boolean)
+              .join(" · ") || "Dosage not specified"}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.rxMedicineDetails}>
+        <PrescriptionMedicineValue
+          label="Dosage"
+          value={medicine?.dosage || "–"}
+        />
+        <PrescriptionMedicineValue
+          label="Frequency"
+          value={medicine?.frequency || "–"}
+        />
+        <PrescriptionMedicineValue
+          label="Days"
+          value={
+            medicine?.durationDays !== null &&
+            medicine?.durationDays !== undefined
+              ? String(medicine.durationDays)
+              : "–"
+          }
+        />
+        <PrescriptionMedicineValue
+          label="Qty"
+          value={
+            medicine?.quantity !== null &&
+            medicine?.quantity !== undefined
+              ? String(medicine.quantity)
+              : "–"
+          }
+        />
+      </View>
+
+      <View style={styles.rxInstruction}>
+        <Ionicons name="restaurant-outline" size={14} color={GOLD_DARK} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.rxInstructionLabel}>Instructions</Text>
+          <Text style={styles.rxInstructionValue}>
+            {medicine?.instructions || "–"}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function PrescriptionMedicineValue({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.rxMedicineValue}>
+      <Text style={styles.rxMedicineValueLabel}>{label}</Text>
+      <Text style={styles.rxMedicineValueText}>{value}</Text>
+    </View>
+  );
+}
+
 function AppointmentCard({
   item,
   busy,
@@ -1457,10 +2095,14 @@ function AppointmentCard({
     "NO_SHOW",
   ].includes(status);
 
+  // Match the website's patient-side action rules.
   const showPay =
-    !past &&
     !closed &&
-    (status === "PAYMENT_PENDING" || isPaymentPending(paymentStatus));
+    !past &&
+    !isPaymentSuccessful(paymentStatus) &&
+    (online
+      ? status === "PAYMENT_PENDING"
+      : ["PAYMENT_PENDING", "PENDING", "CONFIRMED"].includes(status));
 
   const showJoin =
     !closed &&
@@ -1478,12 +2120,83 @@ function AppointmentCard({
     !item.meetingCreated;
 
   const showPrescription =
-    status === "COMPLETED" && Boolean(item.prescriptionId);
+    Boolean(item.prescriptionId && item.prescription);
 
   const showReschedule = !closed && !online;
   const showCancel = !closed;
 
   const theme = getStatusTheme(item.status);
+  
+  async function downloadPrescription() {
+  if (!selectedPrescription?.id || prescriptionDownloading) {
+    return;
+  }
+
+  setPrescriptionDownloading(true);
+
+  try {
+    const token =
+      (await AsyncStorage.getItem("token")) ||
+      (await AsyncStorage.getItem("accessToken"));
+
+    if (!token) {
+      throw new Error("Please login again to download the prescription.");
+    }
+
+    const prescriptionId = encodeURIComponent(
+      String(selectedPrescription.id)
+    );
+
+    const fileName = `NeoLife-Prescription-RX-${prescriptionId}.pdf`;
+
+    const fileUri =
+      FileSystem.cacheDirectory + fileName;
+
+    const result = await FileSystem.downloadAsync(
+      `${API_BASE_URL}/prescriptions/${prescriptionId}/download`,
+      fileUri,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/pdf",
+        },
+      }
+    );
+
+    if (result.status !== 200) {
+      throw new Error(
+        `Unable to download prescription (${result.status}).`
+      );
+    }
+
+    const canShare = await Sharing.isAvailableAsync();
+
+    if (!canShare) {
+      throw new Error(
+        "Unable to open the downloaded prescription on this device."
+      );
+    }
+
+    await Sharing.shareAsync(result.uri, {
+      mimeType: "application/pdf",
+      dialogTitle: "Download Prescription",
+      UTI: "com.adobe.pdf",
+    });
+  } catch (error: any) {
+    console.log(
+      "DOWNLOAD PRESCRIPTION ERROR:",
+      error?.message || error
+    );
+
+    Alert.alert(
+      "Download Failed",
+      error?.message ||
+        "Unable to download prescription. Please try again."
+    );
+  } finally {
+    setPrescriptionDownloading(false);
+  }
+}
 
   return (
     <View style={styles.card}>
@@ -1883,7 +2596,7 @@ function normalizeAppointment(item: any): AppointmentRecord {
     pastMedicalHistory: item.pastMedicalHistory || "",
     cancellationReason: item.cancellationReason || "",
     rescheduleReason: item.rescheduleReason || "",
-    bookingFee: item.bookingFee,
+    bookingFee: item.bookingFee ?? 50,
     patientId: item.patientId,
     patientName: item.patientName,
     phoneNumber: item.phoneNumber,
@@ -1896,6 +2609,7 @@ function normalizeAppointment(item: any): AppointmentRecord {
       "NeoLife Wellness Center, Udupi",
     meetingLink: item.meetingLink || null,
     prescriptionId: item.prescriptionId || null,
+    prescription: null,
     reviewAllowed: Boolean(item.reviewAllowed),
   };
 }
@@ -1971,6 +2685,7 @@ function normalizeConsultation(item: any): AppointmentRecord {
     ).toUpperCase(),
     roomId: item.roomId || null,
     prescriptionId: item.prescriptionId || null,
+    prescription: null,
     reviewAllowed: Boolean(item.reviewAllowed),
   };
 }
@@ -3295,4 +4010,369 @@ const styles = StyleSheet.create({
     color: GREEN,
     fontSize: 10,
   },
+
+  rxModalRoot: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(8,31,23,.66)",
+  },
+  rxBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  rxSheet: {
+    maxHeight: "94%",
+    paddingTop: 8,
+    paddingHorizontal: 18,
+    paddingBottom: Platform.OS === "ios" ? 28 : 20,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    backgroundColor: CREAM,
+  },
+  rxHandle: {
+    width: 44,
+    height: 4,
+    alignSelf: "center",
+    marginBottom: 14,
+    borderRadius: 2,
+    backgroundColor: "#D1D9D3",
+  },
+  rxHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  rxBrand: {
+    color: GOLD_DARK,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 9,
+    letterSpacing: 1.25,
+    marginBottom: 4,
+  },
+  rxTitle: {
+    color: GREEN,
+    fontFamily: "PlayfairDisplay_700Bold",
+    fontSize: 25,
+  },
+  rxReference: {
+    marginTop: 4,
+    color: MUTED,
+    fontFamily: "DMSans_500Medium",
+    fontSize: 10.5,
+  },
+  rxClose: {
+    width: 42,
+    height: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    backgroundColor: MINT,
+  },
+  rxLoading: {
+    marginTop: 12,
+    padding: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    borderRadius: 14,
+    backgroundColor: MINT,
+  },
+  rxLoadingText: {
+    color: GREEN,
+    fontFamily: "DMSans_600SemiBold",
+    fontSize: 10.5,
+  },
+  rxScroll: {
+    paddingTop: 15,
+    paddingBottom: 16,
+  },
+  rxMetaGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 9,
+  },
+  rxMetaCard: {
+    width: "48.6%",
+    minHeight: 70,
+    padding: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: WHITE,
+  },
+  rxMetaIcon: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 11,
+    backgroundColor: MINT,
+  },
+  rxMetaLabel: {
+    color: MUTED,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 7.5,
+    letterSpacing: 0.7,
+    textTransform: "uppercase",
+  },
+  rxMetaValue: {
+    marginTop: 3,
+    color: GREEN,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 10.5,
+    lineHeight: 14,
+  },
+  rxClinicalSection: {
+    marginTop: 12,
+    gap: 9,
+  },
+  rxTextCard: {
+    padding: 13,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: WHITE,
+  },
+  rxTextTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 7,
+  },
+  rxTextIcon: {
+    width: 31,
+    height: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    backgroundColor: MINT,
+  },
+  rxTextLabel: {
+    color: GREEN,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 10,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  rxTextValue: {
+    color: TEXT,
+    fontFamily: "DMSans_400Regular",
+    fontSize: 11.5,
+    lineHeight: 18,
+  },
+  rxMedicineHeader: {
+    marginTop: 20,
+    marginBottom: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  rxMedicineHeadingLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  rxSymbol: {
+    width: 43,
+    height: 43,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    backgroundColor: GREEN,
+  },
+  rxSymbolText: {
+    color: GOLD_LIGHT,
+    fontFamily: "PlayfairDisplay_700Bold",
+    fontSize: 17,
+    fontStyle: "italic",
+  },
+  rxMedicineEyebrow: {
+    color: GOLD_DARK,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 7.5,
+    letterSpacing: 1,
+  },
+  rxMedicineTitle: {
+    marginTop: 1,
+    color: GREEN,
+    fontFamily: "PlayfairDisplay_700Bold",
+    fontSize: 21,
+  },
+  rxCountPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: MINT,
+  },
+  rxCountText: {
+    color: GREEN,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 8.5,
+  },
+  rxEmpty: {
+    alignItems: "center",
+    padding: 23,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: WHITE,
+  },
+  rxEmptyTitle: {
+    marginTop: 7,
+    color: GREEN,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 12,
+  },
+  rxEmptyText: {
+    marginTop: 4,
+    color: MUTED,
+    fontFamily: "DMSans_400Regular",
+    fontSize: 10,
+    textAlign: "center",
+  },
+  rxMedicineList: {
+    gap: 10,
+  },
+  rxMedicineCard: {
+    padding: 14,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: WHITE,
+  },
+  rxMedicineTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 12,
+  },
+  rxMedicineNumber: {
+    width: 35,
+    height: 35,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 11,
+    backgroundColor: GREEN,
+  },
+  rxMedicineNumberText: {
+    color: WHITE,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 11,
+  },
+  rxMedicineName: {
+    color: GREEN,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 13,
+  },
+  rxMedicineDose: {
+    marginTop: 3,
+    color: MUTED,
+    fontFamily: "DMSans_500Medium",
+    fontSize: 9.5,
+  },
+  rxMedicineDetails: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 7,
+  },
+  rxMedicineValue: {
+    width: "48.7%",
+    padding: 9,
+    borderRadius: 12,
+    backgroundColor: CREAM,
+  },
+  rxMedicineValueLabel: {
+    color: MUTED,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 7.5,
+    textTransform: "uppercase",
+  },
+  rxMedicineValueText: {
+    marginTop: 3,
+    color: TEXT,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 10,
+  },
+  rxInstruction: {
+    marginTop: 9,
+    padding: 10,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    borderRadius: 12,
+    backgroundColor: "#FFF8E8",
+  },
+  rxInstructionLabel: {
+    color: GOLD_DARK,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 7.5,
+    textTransform: "uppercase",
+  },
+  rxInstructionValue: {
+    marginTop: 2,
+    color: TEXT,
+    fontFamily: "DMSans_600SemiBold",
+    fontSize: 9.5,
+    lineHeight: 14,
+  },
+  rxDisclaimer: {
+    marginTop: 15,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    borderRadius: 14,
+    backgroundColor: "#EDF6FB",
+  },
+  rxDisclaimerText: {
+    flex: 1,
+    color: INFO,
+    fontFamily: "DMSans_500Medium",
+    fontSize: 9.5,
+    lineHeight: 15,
+  },
+  rxDoneButton: {
+    minHeight: 50,
+    marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 15,
+    backgroundColor: GREEN,
+  },
+  rxDoneText: {
+    color: WHITE,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 11,
+  },
+rxDownloadButton: {
+  marginTop: 16,
+  minHeight: 54,
+  borderRadius: 17,
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 9,
+  backgroundColor: MINT,
+  borderWidth: 1,
+  borderColor: "#CFE3D8",
+},
+
+rxDownloadButtonDisabled: {
+  opacity: 0.65,
+},
+
+rxDownloadText: {
+  fontFamily: "DMSans_700Bold",
+  color: GREEN,
+  fontSize: 11,
+},
 });
+

@@ -29,6 +29,8 @@ import {
   View,
 } from "react-native";
 import { API_BASE_URL } from "../../services/api";
+import DoctorHeader from "../../components/DoctorHeader";
+import DoctorDrawer from "../../components/DoctorDrawer";
 
 const GREEN = "#0B3D2E";
 const GREEN_2 = "#155741";
@@ -157,10 +159,10 @@ export default function DoctorDashboardScreen() {
   });
 
   const [confirmAction, setConfirmAction] = useState<{
-    visible: boolean;
-    id: string;
-    action: "accept" | "logout" | null;
-  }>({ visible: false, id: "", action: null });
+  visible: boolean;
+  id: string;
+  action: "accept" | null;
+}>({ visible: false, id: "", action: null });
 
   const [rejectModal, setRejectModal] = useState({ visible: false, id: "" });
   const [rejectReason, setRejectReason] = useState("");
@@ -172,10 +174,8 @@ export default function DoctorDashboardScreen() {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const doctorInitial = useMemo(() => {
-    const clean = doctorName.replace(/^Dr\.?\s*/i, "").trim();
-    return (clean || doctorName || "D").charAt(0).toUpperCase();
-  }, [doctorName]);
+  
+  
 
   const currentDate = useMemo(() => {
     const now = new Date();
@@ -526,17 +526,9 @@ export default function DoctorDashboardScreen() {
     }
   }
 
-  async function logoutDoctor() {
-    await clearAuth();
-    setConfirmAction({ visible: false, id: "", action: null });
-    router.replace("/login" as any);
-  }
+  
 
-  function openDoctorRoute(route: string) {
-    setMenuOpen(false);
-    router.push(route as any);
-  }
-
+  
   function openScheduleItem(item: ScheduleItem) {
     const id = String(item.id || item.appointmentId || item.consultationId || "");
     if (!id) return;
@@ -563,34 +555,13 @@ export default function DoctorDashboardScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.headerMenu} onPress={() => setMenuOpen(true)}>
-          <Ionicons name="menu-outline" size={25} color={GREEN} />
-        </TouchableOpacity>
-
-        <View style={styles.headerBrand}>
-          <Image source={require("../../assets/images/main_logo.jpeg")} style={styles.headerLogo} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>Doctor Portal</Text>
-            <Text style={styles.headerSub}>NeoLife Wellness Center</Text>
-          </View>
-        </View>
-
-        <TouchableOpacity style={styles.notificationBtn} onPress={() => router.push("/doctor/notifications" as any)}>
-          <Ionicons name="notifications-outline" size={20} color={GREEN} />
-          {summary.pendingConsultationRequests > 0 && (
-            <View style={styles.notificationBadge}>
-              <Text style={styles.notificationBadgeText}>
-                {summary.pendingConsultationRequests > 9 ? "9+" : summary.pendingConsultationRequests}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.avatar} onPress={() => router.push("/doctor/profile" as any)}>
-          <Text style={styles.avatarText}>{doctorInitial}</Text>
-        </TouchableOpacity>
-      </View>
+      
+<DoctorHeader
+  title="Dashboard"
+  onMenuPress={() => setMenuOpen(true)}
+  showDashboardButton={false}
+/>
+       
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -740,55 +711,11 @@ export default function DoctorDashboardScreen() {
         </DashboardPanel>
       </ScrollView>
 
-      <Modal visible={menuOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setMenuOpen(false)}>
-        <View style={styles.drawerRoot}>
-          <Pressable style={styles.drawerBackdrop} onPress={() => setMenuOpen(false)} />
-          <View style={styles.drawer}>
-            <View style={styles.drawerBrandRow}>
-              <Image source={require("../../assets/images/main_logo.jpeg")} style={styles.drawerLogo} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.drawerBrand}>NeoLife</Text>
-                <Text style={styles.drawerSub}>Doctor Portal</Text>
-              </View>
-              <TouchableOpacity style={styles.drawerClose} onPress={() => setMenuOpen(false)}>
-                <Ionicons name="close" size={22} color={GREEN} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 30 }}>
-              <Text style={styles.drawerLabel}>MAIN</Text>
-              <DrawerItem icon="grid-outline" label="Dashboard" active onPress={() => setMenuOpen(false)} />
-              <DrawerItem icon="people-outline" label="Patient Dashboard" onPress={() => openDoctorRoute("/doctor/patients")} />
-              <DrawerItem icon="calendar-outline" label="Appointment Calendar" onPress={() => openDoctorRoute("/doctor/calendar")} />
-              <DrawerItem icon="calendar-number-outline" label="Upcoming Schedule" onPress={() => openDoctorRoute("/doctor/schedule")} />
-              <DrawerItem icon="time-outline" label="Manage Availability" onPress={() => openDoctorRoute("/doctor/availability")} />
-
-              <Text style={styles.drawerLabel}>CLINICAL</Text>
-              {(hasOffline !== false || hasOffline === null) && (
-                <DrawerItem icon="clipboard-outline" label="Appointment Details" onPress={() => openDoctorRoute("/doctor/appointments")} />
-              )}
-              {(hasOnline !== false || hasOnline === null) && (
-                <DrawerItem icon="videocam-outline" label="Consultation Details" onPress={() => openDoctorRoute("/doctor/consultations")} />
-              )}
-
-              <Text style={styles.drawerLabel}>ACCOUNT</Text>
-              <DrawerItem icon="wallet-outline" label="Transactions" onPress={() => openDoctorRoute("/doctor/transactions")} />
-              <DrawerItem icon="person-circle-outline" label="My Profile" onPress={() => openDoctorRoute("/doctor/profile")} />
-
-              <TouchableOpacity
-                style={styles.logoutButton}
-                onPress={() => {
-                  setMenuOpen(false);
-                  setConfirmAction({ visible: true, id: "", action: "logout" });
-                }}
-              >
-                <Ionicons name="log-out-outline" size={20} color={WHITE} />
-                <Text style={styles.logoutText}>Logout</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <DoctorDrawer
+  visible={menuOpen}
+  onClose={() => setMenuOpen(false)}
+  activeRoute="/doctor/dashboard"
+/>
 
       <Modal visible={confirmAction.visible} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.centerModalRoot}>
@@ -799,18 +726,16 @@ export default function DoctorDashboardScreen() {
           <View style={styles.confirmCard}>
             <View style={styles.confirmIcon}>
               <Ionicons
-                name={confirmAction.action === "logout" ? "log-out-outline" : "checkmark-circle-outline"}
-                size={30}
-                color={confirmAction.action === "logout" ? DANGER : SUCCESS}
-              />
+  name="checkmark-circle-outline"
+  size={30}
+  color={SUCCESS}
+/>
             </View>
             <Text style={styles.modalEyebrow}>NEOLIFE DOCTOR PORTAL</Text>
-            <Text style={styles.modalTitle}>{confirmAction.action === "logout" ? "Logout?" : "Accept Consultation?"}</Text>
-            <Text style={styles.modalMessage}>
-              {confirmAction.action === "logout"
-                ? "You will need to sign in again to access your doctor workspace."
-                : "Confirm that you want to accept this online consultation request."}
-            </Text>
+           <Text style={styles.modalMessage}>
+  Confirm that you want to accept this online consultation request.
+</Text>
+            <Text style={styles.modalTitle}>Accept Consultation?</Text>
             <View style={styles.modalButtonRow}>
               <TouchableOpacity
                 style={styles.secondaryModalButton}
@@ -820,13 +745,12 @@ export default function DoctorDashboardScreen() {
                 <Text style={styles.secondaryModalButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.primaryModalButton, confirmAction.action === "logout" && { backgroundColor: DANGER }]}
+                style={styles.primaryModalButton}
                 disabled={actionLoading}
-                onPress={() =>
-                  confirmAction.action === "logout" ? logoutDoctor() : acceptConsultation(confirmAction.id)
-                }
+                onPress={() => acceptConsultation(confirmAction.id)}
+
               >
-                {actionLoading ? <ActivityIndicator size="small" color={WHITE} /> : <Text style={styles.primaryModalButtonText}>{confirmAction.action === "logout" ? "Logout" : "Accept"}</Text>}
+                {actionLoading ? <ActivityIndicator size="small" color={WHITE} /> : <Text style={styles.primaryModalButtonText}>Accept</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -1130,16 +1054,8 @@ function EmptyState({ icon, title, text }: { icon: any; title: string; text: str
   );
 }
 
-function DrawerItem({ icon, label, onPress, active = false }: { icon: any; label: string; onPress: () => void; active?: boolean }) {
-  return (
-    <TouchableOpacity style={[styles.drawerItem, active && styles.drawerItemActive]} onPress={onPress}>
-      <Ionicons name={icon} size={20} color={active ? GREEN : GOLD} />
-      <Text style={[styles.drawerItemText, active && { color: GREEN }]}>{label}</Text>
-      <Ionicons name="chevron-forward" size={16} color={active ? GREEN : "#ADC0B4"} style={{ marginLeft: "auto" }} />
-    </TouchableOpacity>
-  );
-}
 
+  
 function getItemTime(item: ScheduleItem) {
   return String(item.startTime || item.appointmentTime || item.consultationTime || "23:59:59");
 }

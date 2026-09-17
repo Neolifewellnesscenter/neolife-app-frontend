@@ -118,18 +118,83 @@ export default function LoginScreen() {
   }
 
   async function saveLoginSession(data: any) {
-    const role = String(data?.role || "USER").toUpperCase();
+  const role = String(data?.role || "USER").toUpperCase();
+  const accessToken = String(data?.token || "");
+  const refreshToken = String(data?.refreshToken || "");
+  const userId = String(data?.id || "");
 
+  // Remove old role-specific sessions first.
+  // This prevents an old doctor/staff/therapist token being used
+  // after another type of user logs in.
+  await AsyncStorage.multiRemove([
+    "doctorToken",
+    "doctorRefreshToken",
+    "doctorId",
+    "doctorName",
+
+    "staffToken",
+    "staffRefreshToken",
+    "medicalStaffId",
+    "staffId",
+    "staffName",
+
+    "therapistToken",
+    "therapistRefreshToken",
+    "therapistId",
+
+    "adminToken",
+    "adminRefreshToken",
+    "adminId",
+  ]);
+
+  // Common session
+  await AsyncStorage.multiSet([
+    ["token", accessToken],
+    ["refreshToken", refreshToken],
+    ["userId", userId],
+    ["email", data?.email || email.trim()],
+    ["role", role],
+    ["profileCompleted", String(Boolean(data?.profileCompleted))],
+    ["isLoggedIn", "true"],
+  ]);
+
+  // Doctor-specific session
+  if (role === "DOCTOR") {
     await AsyncStorage.multiSet([
-      ["token", data?.token || ""],
-      ["refreshToken", data?.refreshToken || ""],
-      ["userId", String(data?.id || "")],
-      ["email", data?.email || email.trim()],
-      ["role", role],
-      ["profileCompleted", String(Boolean(data?.profileCompleted))],
-      ["isLoggedIn", "true"],
+      ["doctorToken", accessToken],
+      ["doctorRefreshToken", refreshToken],
+      ["doctorId", userId],
     ]);
   }
+
+  // Medical staff-specific session
+  if (role === "MEDICAL_STAFF" || role === "STAFF") {
+    await AsyncStorage.multiSet([
+      ["staffToken", accessToken],
+      ["staffRefreshToken", refreshToken],
+      ["medicalStaffId", userId],
+      ["staffId", userId],
+    ]);
+  }
+
+  // Therapist-specific session
+  if (role === "THERAPIST") {
+    await AsyncStorage.multiSet([
+      ["therapistToken", accessToken],
+      ["therapistRefreshToken", refreshToken],
+      ["therapistId", userId],
+    ]);
+  }
+
+  // Admin-specific session
+  if (role === "ADMIN") {
+    await AsyncStorage.multiSet([
+      ["adminToken", accessToken],
+      ["adminRefreshToken", refreshToken],
+      ["adminId", userId],
+    ]);
+  }
+}
 
   async function saveRememberedEmail() {
     if (rememberMe) {

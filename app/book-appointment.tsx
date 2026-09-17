@@ -13,13 +13,12 @@ import {
 } from "@expo-google-fonts/playfair-display";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { router } from "expo-router";
-import { WebView } from "react-native-webview";
+import RazorpayCheckout from "react-native-razorpay";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
-  Linking,
   Modal,
   Platform,
   Pressable,
@@ -135,8 +134,7 @@ export default function BookAppointmentScreen() {
 
   const [patient, setPatient] = useState<PatientForm>(EMPTY_PATIENT);
   const [paying, setPaying] = useState(false);
-  const [paymentVisible, setPaymentVisible] = useState(false);
-  const [paymentData, setPaymentData] = useState<RazorpayPaymentData | null>(null);
+
   const [pendingAppointment, setPendingAppointment] = useState<PendingAppointment | null>(null);
   const [verifyingPayment, setVerifyingPayment] = useState(false);
 
@@ -663,26 +661,124 @@ export default function BookAppointmentScreen() {
       );
 
       const razorpayData: RazorpayPaymentData =
-        paymentResult?.data || {};
+  paymentResult?.data || {};
 
-      const missingField = [
-        "keyId",
-        "razorpayOrderId",
-        "amount",
-        "currency",
-      ].find((field) => {
-        const value = (razorpayData as any)[field];
-        return value === null || value === undefined || value === "";
-      });
+console.log(
+  "RAZORPAY INITIATE RESPONSE:",
+  JSON.stringify(paymentResult, null, 2)
+);
 
-      if (missingField) {
-        throw new Error(
-          `Payment response is missing ${missingField}.`
-        );
-      }
+const missingField = [
+  "keyId",
+  "razorpayOrderId",
+  "amount",
+  "currency",
+].find((field) => {
+  const value = (razorpayData as any)[field];
 
-      setPaymentData(razorpayData);
-      setPaymentVisible(true);
+  return (
+    value === null ||
+    value === undefined ||
+    value === ""
+  );
+});
+
+if (missingField) {
+  throw new Error(
+    `Payment response is missing ${missingField}.`
+  );
+}
+
+const options: any = {
+  key: String(razorpayData.keyId),
+
+  amount: Number(razorpayData.amount),
+
+  currency: String(
+    razorpayData.currency || "INR"
+  ),
+
+  name:
+    razorpayData.name ||
+    "NeoLife Wellness Center",
+
+  description:
+    razorpayData.description ||
+    "NeoLife Offline Appointment",
+
+  order_id: String(
+    razorpayData.razorpayOrderId
+  ),
+
+  prefill: {
+    name:
+      razorpayData.customerName ||
+      appointment?.patientName ||
+      patient.patientName,
+
+    email:
+      razorpayData.customerEmail || "",
+
+    contact:
+      razorpayData.customerPhone ||
+      appointment?.phoneNumber ||
+      patient.phoneNumber,
+  },
+
+  notes: {
+    appointmentId: String(appointmentId),
+    appointmentType: "OFFLINE",
+  },
+
+  theme: {
+    color: "#0B3D2E",
+  },
+};
+
+console.log(
+  "RAZORPAY NATIVE OPTIONS:",
+  JSON.stringify(
+    {
+      ...options,
+      key: options.key
+        ? `${options.key.substring(0, 8)}...`
+        : "",
+    },
+    null,
+    2
+  )
+);
+
+try {
+  const razorpayResponse =
+    await RazorpayCheckout.open(options);
+
+  console.log(
+    "RAZORPAY NATIVE SUCCESS:",
+    razorpayResponse
+  );
+
+  await verifyAppointmentPayment(
+    razorpayResponse
+  );
+} catch (razorpayError: any) {
+  console.log(
+    "RAZORPAY NATIVE ERROR:",
+    razorpayError
+  );
+
+  const errorMessage =
+    razorpayError?.description ||
+    razorpayError?.message ||
+    razorpayError?.error?.description ||
+    "Payment was cancelled or could not be completed.";
+
+  showNotice(
+    "error",
+    "Payment Not Completed",
+    `${errorMessage} Your appointment remains pending payment.`
+  );
+}
     } catch (error: any) {
       if (error?.auth) {
         showNotice(
@@ -704,67 +800,54 @@ export default function BookAppointmentScreen() {
     }
   }
 
-  function closePaymentCheckout() {
-    if (verifyingPayment) return;
-
-    setPaymentVisible(false);
-    setPaymentData(null);
-
-    showNotice(
-      "info",
-      "Payment Not Completed",
-      "The appointment is saved as pending payment. You can complete payment from My Appointments."
-    );
-  }
-
+  
+ 
+      
   async function verifyAppointmentPayment(
     razorpayResponse: any
   ) {
-    if (!pendingAppointment) {
-      showNotice(
-        "error",
-        "Appointment Missing",
-        "The appointment details are unavailable. Please open My Appointments before trying payment again."
-      );
-      setPaymentVisible(false);
-      return;
-    }
-
     try {
       setVerifyingPayment(true);
 
-      const result = await apiRequest(
-        "/payments/razorpay/verify",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            razorpayPaymentId:
-              razorpayResponse?.razorpay_payment_id,
-            razorpayOrderId:
-              razorpayResponse?.razorpay_order_id,
-            razorpaySignature:
-              razorpayResponse?.razorpay_signature,
-          }),
-        }
-      );
+      console.log("RAZORPAY VERIFY REQUEST:", {
+        razorpayPaymentId: razorpayResponse?.razorpay_payment_id,
+        razorpayOrderId: razorpayResponse?.razorpay_order_id,
+        hasSignature: !!razorpayResponse?.razorpay_signature,
+      });
 
-      if (result?.data?.signatureVerified === false) {
+      if (
+        !razorpayResponse?.razorpay_payment_id ||
+        !razorpayResponse?.razorpay_order_id ||
+        !razorpayResponse?.razorpay_signature
+      ) {
         throw new Error(
-          "Payment signature verification failed."
+          "Razorpay did not return complete payment verification details."
         );
       }
 
-      const appointmentId =
-        pendingAppointment?.id ||
-        pendingAppointment?.appointmentId;
+      const result = await apiRequest("/payments/razorpay/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          razorpayPaymentId: razorpayResponse.razorpay_payment_id,
+          razorpayOrderId: razorpayResponse.razorpay_order_id,
+          razorpaySignature: razorpayResponse.razorpay_signature,
+        }),
+      });
+
+      console.log(
+        "RAZORPAY VERIFY RESPONSE:",
+        JSON.stringify(result, null, 2)
+      );
+
+      if (result?.data?.signatureVerified === false) {
+        throw new Error("Payment signature verification failed.");
+      }
 
       await AsyncStorage.multiRemove([
         "pendingAppointmentId",
         "pendingAppointment",
       ]);
 
-      setPaymentVisible(false);
-      setPaymentData(null);
       setPendingAppointment(null);
 
       showNotice(
@@ -773,18 +856,8 @@ export default function BookAppointmentScreen() {
         "Your ₹50 payment was verified successfully. Your appointment is being confirmed.",
         "appointments"
       );
-
-      console.log(
-        "APPOINTMENT PAYMENT VERIFIED:",
-        appointmentId
-      );
     } catch (error: any) {
-      console.log(
-        "APPOINTMENT PAYMENT VERIFY ERROR:",
-        error
-      );
-
-      setPaymentVisible(false);
+      console.log("APPOINTMENT PAYMENT VERIFY ERROR:", error);
 
       showNotice(
         "error",
@@ -795,224 +868,6 @@ export default function BookAppointmentScreen() {
     } finally {
       setVerifyingPayment(false);
     }
-  }
-
-  function handleRazorpayMessage(event: any) {
-    try {
-      const raw = event?.nativeEvent?.data || "";
-      const message = JSON.parse(raw);
-
-      if (message?.type === "payment_success") {
-        verifyAppointmentPayment(message?.data || {});
-        return;
-      }
-
-      if (message?.type === "payment_failed") {
-        setPaymentVisible(false);
-        setPaymentData(null);
-
-        showNotice(
-          "error",
-          "Payment Failed",
-          message?.message ||
-            "The payment could not be completed. Your appointment remains pending payment."
-        );
-        return;
-      }
-
-      if (message?.type === "payment_dismissed") {
-        closePaymentCheckout();
-        return;
-      }
-
-      if (message?.type === "checkout_error") {
-        setPaymentVisible(false);
-        setPaymentData(null);
-
-        showNotice(
-          "error",
-          "Unable to Open Payment",
-          message?.message ||
-            "Razorpay Checkout could not be opened. Please try again."
-        );
-      }
-    } catch (error) {
-      console.log("RAZORPAY MESSAGE ERROR:", error);
-    }
-  }
-
-  function handlePaymentNavigation(request: any) {
-    const url = String(request?.url || "");
-
-    if (
-      !url ||
-      url === "about:blank" ||
-      url.startsWith("https://") ||
-      url.startsWith("http://")
-    ) {
-      return true;
-    }
-
-    Linking.openURL(url).catch((error) => {
-      console.log("PAYMENT EXTERNAL URL ERROR:", error);
-    });
-
-    return false;
-  }
-
-  function buildRazorpayHtml() {
-    if (!paymentData || !pendingAppointment) return "";
-
-    const appointmentId =
-      pendingAppointment?.id ||
-      pendingAppointment?.appointmentId ||
-      "";
-
-    const options = {
-      key: paymentData.keyId,
-      amount: Number(paymentData.amount),
-      currency: paymentData.currency || "INR",
-      name:
-        paymentData.name ||
-        "Neolife Wellness Center",
-      description:
-        paymentData.description ||
-        "Offline appointment booking",
-      order_id: paymentData.razorpayOrderId,
-      prefill: {
-        name:
-          paymentData.customerName ||
-          pendingAppointment?.patientName ||
-          patient.patientName,
-        email: paymentData.customerEmail || "",
-        contact:
-          paymentData.customerPhone ||
-          pendingAppointment?.phoneNumber ||
-          patient.phoneNumber,
-      },
-      notes: {
-        appointmentId: String(appointmentId),
-        appointmentType: "OFFLINE",
-      },
-      theme: {
-        color: "#0B3D2E",
-      },
-    };
-
-    const safeOptions = JSON.stringify(options).replace(
-      /</g,
-      "\\u003c"
-    );
-
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-        <style>
-          html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            background: #FBFAF6;
-            font-family: Arial, sans-serif;
-          }
-
-          .loading {
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: #0B3D2E;
-          }
-
-          .spinner {
-            width: 34px;
-            height: 34px;
-            border-radius: 50%;
-            border: 4px solid #EAF5EF;
-            border-top-color: #D6B45B;
-            animation: spin .8s linear infinite;
-            margin-bottom: 14px;
-          }
-
-          @keyframes spin {
-            to { transform: rotate(360deg); }
-          }
-        </style>
-      </head>
-
-      <body>
-        <div class="loading" id="loading">
-          <div class="spinner"></div>
-          <div>Opening secure payment...</div>
-        </div>
-
-        <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-        <script>
-          (function () {
-            function send(message) {
-              window.ReactNativeWebView.postMessage(
-                JSON.stringify(message)
-              );
-            }
-
-            if (typeof Razorpay === "undefined") {
-              send({
-                type: "checkout_error",
-                message: "Razorpay Checkout could not be loaded. Please check your internet connection."
-              });
-              return;
-            }
-
-            var options = ${safeOptions};
-
-            options.handler = function (response) {
-              send({
-                type: "payment_success",
-                data: response
-              });
-            };
-
-            options.modal = {
-              ondismiss: function () {
-                send({ type: "payment_dismissed" });
-              }
-            };
-
-            try {
-              var razorpay = new Razorpay(options);
-
-              razorpay.on("payment.failed", function (response) {
-                send({
-                  type: "payment_failed",
-                  message:
-                    response &&
-                    response.error &&
-                    response.error.description
-                      ? response.error.description
-                      : "Payment failed. Please try again."
-                });
-              });
-
-              document.getElementById("loading").style.display = "none";
-              razorpay.open();
-            } catch (error) {
-              send({
-                type: "checkout_error",
-                message:
-                  error && error.message
-                    ? error.message
-                    : "Unable to open Razorpay Checkout."
-              });
-            }
-          })();
-        </script>
-      </body>
-      </html>
-    `;
   }
 
   function showNotice(
@@ -1262,84 +1117,6 @@ export default function BookAppointmentScreen() {
         visible={menuOpen}
         onClose={() => setMenuOpen(false)}
       />
-
-      <Modal
-        visible={paymentVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={closePaymentCheckout}
-      >
-        <View style={styles.paymentScreen}>
-          <View style={styles.paymentHeader}>
-            <TouchableOpacity
-              style={styles.paymentCloseButton}
-              onPress={closePaymentCheckout}
-              disabled={verifyingPayment}
-            >
-              <Ionicons name="close" size={21} color={GREEN} />
-            </TouchableOpacity>
-
-            <View style={styles.paymentHeaderCopy}>
-              <Text style={styles.paymentHeaderTitle}>Secure Payment</Text>
-              <Text style={styles.paymentHeaderSubtitle}>
-                NeoLife Wellness Center · ₹50
-              </Text>
-            </View>
-
-            <View style={styles.paymentSecureIcon}>
-              <Ionicons
-                name="shield-checkmark-outline"
-                size={20}
-                color={SUCCESS}
-              />
-            </View>
-          </View>
-
-          {verifyingPayment ? (
-            <View style={styles.paymentVerifyState}>
-              <ActivityIndicator size="large" color={GOLD_DARK} />
-              <Text style={styles.paymentVerifyTitle}>
-                Verifying payment
-              </Text>
-              <Text style={styles.paymentVerifyText}>
-                Please wait. Do not close the app or pay again.
-              </Text>
-            </View>
-          ) : paymentData && pendingAppointment ? (
-            <WebView
-              originWhitelist={["*"]}
-              source={{ html: buildRazorpayHtml() }}
-              onMessage={handleRazorpayMessage}
-              onShouldStartLoadWithRequest={handlePaymentNavigation}
-              javaScriptEnabled
-              domStorageEnabled
-              sharedCookiesEnabled
-              thirdPartyCookiesEnabled
-              startInLoadingState
-              renderLoading={() => (
-                <View style={styles.webviewLoader}>
-                  <ActivityIndicator size="large" color={GREEN} />
-                  <Text style={styles.webviewLoaderText}>
-                    Loading Razorpay...
-                  </Text>
-                </View>
-              )}
-              style={styles.paymentWebView}
-            />
-          ) : (
-            <View style={styles.paymentVerifyState}>
-              <Ionicons
-                name="alert-circle-outline"
-                size={38}
-                color={DANGER}
-              />
-              <Text style={styles.paymentVerifyTitle}>
-                Payment information unavailable
-              </Text>
-            </View>
-          )}
-        </View>
-      </Modal>
 
       <Modal
         visible={notice.visible}

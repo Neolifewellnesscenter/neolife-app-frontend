@@ -1,21 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  DMSans_400Regular,
-  DMSans_500Medium,
-  DMSans_700Bold,
-  useFonts as useDMSans,
-} from "@expo-google-fonts/dm-sans";
-import {
-  PlayfairDisplay_600SemiBold,
-  PlayfairDisplay_700Bold,
-  useFonts as usePlayfair,
-} from "@expo-google-fonts/playfair-display";
+import * as FileSystem from "expo-file-system/legacy";
 import { router } from "expo-router";
+import * as Sharing from "expo-sharing";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Platform,
   Pressable,
@@ -28,23 +20,20 @@ import {
   View,
 } from "react-native";
 
+import DoctorDrawer from "../../components/DoctorDrawer";
+import DoctorHeader from "../../components/DoctorHeader";
 import { API_BASE_URL } from "../../services/api";
 
-/* =====================================================
-   THEME
-===================================================== */
-
 const GREEN = "#0B3D2E";
+const GREEN_2 = "#14533D";
 const MINT = "#EAF5EF";
 const GOLD = "#D6B45B";
 const GOLD_DARK = "#A98632";
-const GOLD_LIGHT = "#F4E6B7";
 const CREAM = "#FBFAF6";
 const WHITE = "#FFFFFF";
 const TEXT = "#17231D";
 const MUTED = "#75837B";
 const BORDER = "#E6EBE7";
-
 const DANGER = "#B95045";
 const DANGER_LIGHT = "#FBECE9";
 const SUCCESS = "#287146";
@@ -53,6 +42,8 @@ const INFO = "#31708F";
 const INFO_LIGHT = "#EDF6FB";
 const WARNING = "#946300";
 const WARNING_LIGHT = "#FFF6E8";
+const PURPLE = "#76548F";
+const PURPLE_LIGHT = "#F5EFFB";
 
 const PAGE_SIZE = 8;
 
@@ -66,6 +57,8 @@ const STATUSES = [
   "RESCHEDULED",
 ];
 
+const MODES = ["", "OFFLINE", "ONLINE"];
+
 type Appointment = {
   id: string | number;
   patientId: string | number | null;
@@ -73,8 +66,6 @@ type Appointment = {
   phoneNumber: string;
   age: string | number;
   gender: string;
-  doctorName: string;
-  specialization: string;
   date: string;
   startTime: string;
   endTime: string;
@@ -86,7 +77,6 @@ type Appointment = {
   paymentStatus: string;
   cancellationReason: string;
   rescheduleReason: string;
-  createdAt: string;
 };
 
 type Therapist = {
@@ -94,17 +84,32 @@ type Therapist = {
   name?: string;
   therapistName?: string;
   specialization?: string;
-  qualification?: string;
   active?: boolean;
 };
 
-type NoticeType = "success" | "error" | "info";
+type PrescriptionItem = {
+  id?: string | number;
+  medicineName?: string;
+  productName?: string;
+  dosage?: string;
+  frequency?: string;
+  durationDays?: number;
+  quantity?: number;
+  instructions?: string;
+};
 
-type Notice = {
-  visible: boolean;
-  type: NoticeType;
-  title: string;
-  message: string;
+type Prescription = {
+  id: string | number;
+  patientId?: string | number | null;
+  patientName?: string;
+  appointmentId?: string | number | null;
+  diagnosis?: string;
+  advice?: string;
+  notes?: string;
+  status?: string;
+  finalizedAt?: string;
+  createdAt?: string;
+  items?: PrescriptionItem[];
 };
 
 type TreatmentPlanForm = {
@@ -118,176 +123,146 @@ type TreatmentPlanForm = {
   notes: string;
 };
 
-type PrescriptionRecord = {
-  id: string | number;
-  patientId?: string | number | null;
-  appointmentId?: string | number | null;
-  consultationId?: string | number | null;
-  diagnosis?: string;
-  advice?: string;
-  notes?: string;
-  status?: string;
-  finalizedAt?: string;
-  createdAt?: string;
-  items?: Array<{
-    id?: string | number;
-    medicineName?: string;
-    dosage?: string;
-    frequency?: string;
-    durationDays?: number;
-    quantity?: number;
-    instructions?: string;
-  }>;
+type Notice = {
+  visible: boolean;
+  type: "success" | "error" | "info";
+  title: string;
+  message: string;
 };
 
-type TreatmentPlanRecord = {
-  id: string | number;
-  patientId?: string | number | null;
-  patientName?: string;
-  doctorId?: string | number | null;
-  doctorName?: string;
-  therapistId?: string | number | null;
-  therapistName?: string;
-  treatmentName?: string;
-  diagnosis?: string;
-  totalSessions?: number;
-  completedSessions?: number;
-  remainingSessions?: number;
-  startDate?: string;
-  expectedEndDate?: string;
-  instructions?: string;
-  notes?: string;
-  status?: string;
-  createdAt?: string;
-};
+function localDateKey(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
-const MENU = [
-  {
-    section: "MAIN",
-    icon: "grid-outline",
-    label: "Dashboard",
-    route: "/doctor/dashboard",
-    mode: null,
-  },
-  {
-    section: "MAIN",
-    icon: "people-outline",
-    label: "Patients",
-    route: "/doctor/patients",
-    mode: null,
-  },
-  {
-    section: "MAIN",
-    icon: "calendar-outline",
-    label: "Appointment Calendar",
-    route: "/doctor/calendar",
-    mode: null,
-  },
-  {
-    section: "MAIN",
-    icon: "calendar-number-outline",
-    label: "Upcoming Schedule",
-    route: "/doctor/schedule",
-    mode: null,
-  },
-  {
-    section: "MAIN",
-    icon: "time-outline",
-    label: "Manage Availability",
-    route: "/doctor/availability",
-    mode: null,
-  },
-  {
-    section: "CLINICAL",
-    icon: "clipboard-outline",
-    label: "Appointment Details",
-    route: "/doctor/appointments",
-    mode: "OFFLINE",
-  },
-  {
-    section: "CLINICAL",
-    icon: "videocam-outline",
-    label: "Consultation Details",
-    route: "/doctor/consultations",
-    mode: "ONLINE",
-  },
-  {
-    section: "FINANCE",
-    icon: "card-outline",
-    label: "Transactions",
-    route: "/doctor/transactions",
-    mode: null,
-  },
-  {
-    section: "FINANCE",
-    icon: "person-circle-outline",
-    label: "My Profile",
-    route: "/doctor/profile",
-    mode: null,
-  },
-] as const;
+function titleCase(value: any) {
+  return String(value || "—")
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatDate(value?: string) {
+  if (!value) return "—";
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatTime(value?: string) {
+  if (!value) return "—";
+  const [hours, minutes] = String(value).split(":").map(Number);
+  if (!Number.isFinite(hours)) return String(value);
+
+  return new Date(2000, 0, 1, hours, minutes || 0).toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function tone(value: string) {
+  const normalized = String(value || "").toUpperCase();
+
+  if (["COMPLETED", "CONFIRMED", "SUCCESS", "PAID"].includes(normalized)) {
+    return { backgroundColor: SUCCESS_LIGHT, color: SUCCESS };
+  }
+
+  if (["CANCELLED", "REJECTED", "FAILED"].includes(normalized)) {
+    return { backgroundColor: DANGER_LIGHT, color: DANGER };
+  }
+
+  if (["PENDING", "PAYMENT_PENDING", "RESCHEDULED"].includes(normalized)) {
+    return { backgroundColor: WARNING_LIGHT, color: WARNING };
+  }
+
+  return { backgroundColor: INFO_LIGHT, color: INFO };
+}
+
+function normalizeAppointment(item: any): Appointment {
+  return {
+    id: item?.id,
+    patientId: item?.patientId,
+    patientName: item?.patientName || item?.name || "Patient",
+    phoneNumber: item?.phoneNumber || "—",
+    age: item?.age ?? "—",
+    gender: item?.gender || "—",
+    date: item?.appointmentDate || item?.date || "",
+    startTime: item?.startTime || item?.time || "",
+    endTime: item?.endTime || "",
+    mode: String(item?.appointmentMode || "OFFLINE").toUpperCase(),
+    status: String(item?.status || "PENDING").toUpperCase(),
+    symptoms: item?.symptoms || "—",
+    history: item?.pastMedicalHistory || "—",
+    bookingFee: Number(item?.bookingFee ?? 0),
+    paymentStatus: String(item?.paymentStatus || "PENDING").toUpperCase(),
+    cancellationReason: item?.cancellationReason || "",
+    rescheduleReason: item?.rescheduleReason || "",
+  };
+}
+
+function mergePrescriptionData(
+  summary: Prescription | null,
+  details: any
+): Prescription | null {
+  if (!summary && !details) return null;
+
+  const base: any = summary || {};
+  const full: any = details || {};
+  const detailItems = Array.isArray(full.items) ? full.items : [];
+  const summaryItems = Array.isArray(base.items) ? base.items : [];
+
+  return {
+    ...base,
+    ...full,
+    items: detailItems.length ? detailItems : summaryItems,
+  };
+}
 
 export default function DoctorAppointmentsScreen() {
-  const [dmLoaded] = useDMSans({
-    DMSans_400Regular,
-    DMSans_500Medium,
-    DMSans_700Bold,
-  });
+  const today = localDateKey(new Date());
 
-  const [playfairLoaded] = usePlayfair({
-    PlayfairDisplay_600SemiBold,
-    PlayfairDisplay_700Bold,
-  });
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [therapists, setTherapists] = useState<Therapist[]>([]);
+  const [doctorName, setDoctorName] = useState("Doctor");
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  const [doctorName, setDoctorName] = useState("Doctor");
-  const [doctorId, setDoctorId] = useState<number | null>(null);
-
-  const [hasOnline, setHasOnline] = useState<boolean | null>(null);
-  const [hasOffline, setHasOffline] = useState<boolean | null>(null);
-
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [therapists, setTherapists] = useState<Therapist[]>([]);
-
-  const [prescriptionByAppointment, setPrescriptionByAppointment] =
-    useState<Record<string, PrescriptionRecord | null>>({});
-  const [treatmentPlansByPatient, setTreatmentPlansByPatient] =
-    useState<Record<string, TreatmentPlanRecord[]>>({});
-  const [viewPrescription, setViewPrescription] =
-    useState<PrescriptionRecord | null>(null);
-  const [viewTreatmentPlans, setViewTreatmentPlans] =
-    useState<TreatmentPlanRecord[]>([]);
-  const [viewTreatmentPatientName, setViewTreatmentPatientName] =
-    useState("");
-
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [details, setDetails] = useState<Appointment | null>(null);
-
-  const [completeTarget, setCompleteTarget] =
-    useState<Appointment | null>(null);
-  const [completing, setCompleting] = useState(false);
-
-  const [workflowTarget, setWorkflowTarget] =
-    useState<Appointment | null>(null);
-
-  const [treatmentTarget, setTreatmentTarget] =
-    useState<Appointment | null>(null);
-
-  const [savingPlan, setSavingPlan] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-
+  const [modeFilter, setModeFilter] = useState("");
   const [page, setPage] = useState(1);
-
-  const [filterChoiceOpen, setFilterChoiceOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const [therapistChoiceOpen, setTherapistChoiceOpen] = useState(false);
 
-  const [logoutOpen, setLogoutOpen] = useState(false);
+  const [selected, setSelected] = useState<Appointment | null>(null);
+  const [completeTarget, setCompleteTarget] = useState<Appointment | null>(null);
+  const [planTarget, setPlanTarget] = useState<Appointment | null>(null);
+
+  const [plan, setPlan] = useState<TreatmentPlanForm>({
+    therapistId: "",
+    treatmentName: "",
+    diagnosis: "",
+    totalSessions: "",
+    startDate: "",
+    expectedEndDate: "",
+    instructions: "",
+    notes: "",
+  });
+
+  const [planDatePicker, setPlanDatePicker] =
+    useState<null | "start" | "end">(null);
+  const [therapistPickerOpen, setTherapistPickerOpen] = useState(false);
 
   const [notice, setNotice] = useState<Notice>({
     visible: false,
@@ -295,36 +270,6 @@ export default function DoctorAppointmentsScreen() {
     title: "",
     message: "",
   });
-
-  const [planDatePicker, setPlanDatePicker] =
-    useState<null | "start" | "end">(null);
-
-  const today = localDateKey(new Date());
-
-  const [plan, setPlan] = useState<TreatmentPlanForm>({
-    therapistId: "",
-    treatmentName: "",
-    diagnosis: "",
-    totalSessions: "",
-    startDate: today,
-    expectedEndDate: today,
-    instructions: "",
-    notes: "",
-  });
-
-  const doctorInitial = useMemo(() => {
-    return (
-      doctorName
-        .replace(/^Dr\.?\s*/i, "")
-        .trim()
-        .charAt(0)
-        .toUpperCase() || "D"
-    );
-  }, [doctorName]);
-
-  /* =====================================================
-     AUTH / API
-  ===================================================== */
 
   async function getToken() {
     return (
@@ -348,12 +293,10 @@ export default function DoctorAppointmentsScreen() {
       "email",
       "profileCompleted",
       "isLoggedIn",
-      "doctorHasOnline",
-      "doctorHasOffline",
     ]);
   }
 
-  async function api(path: string, options: any = {}) {
+  async function api(path: string, options: RequestInit = {}) {
     const token = await getToken();
 
     if (!token) {
@@ -362,13 +305,13 @@ export default function DoctorAppointmentsScreen() {
       throw new Error("Doctor login required.");
     }
 
-    const headers: any = {
+    const headers: Record<string, string> = {
       Accept: "application/json",
+      ...(options.headers as Record<string, string> | undefined),
       Authorization: `Bearer ${token}`,
-      ...(options.headers || {}),
     };
 
-    if (options.body) {
+    if (options.body && !(options.body instanceof FormData)) {
       headers["Content-Type"] = "application/json";
     }
 
@@ -378,24 +321,28 @@ export default function DoctorAppointmentsScreen() {
     });
 
     const text = await response.text();
-
     let result: any = {};
 
     try {
       result = text ? JSON.parse(text) : {};
     } catch {
-      result = {
-        success: false,
-        message: text || `Request failed (${response.status})`,
-      };
+      result = { message: text };
     }
 
+    // 401 = authentication/session problem: clear the doctor session.
     if (response.status === 401) {
       await clearSession();
       router.replace("/login" as any);
-      throw new Error(result?.message || "Doctor session expired.");
+
+      const error: any = new Error(
+        result?.message || "Your session expired. Please log in again."
+      );
+      error.status = 401;
+      throw error;
     }
 
+    // 403 = authenticated, but this particular API is forbidden.
+    // Do NOT clear the doctor token or send the doctor to Login.
     if (response.status === 403) {
       const error: any = new Error(
         result?.message ||
@@ -407,7 +354,7 @@ export default function DoctorAppointmentsScreen() {
 
     if (!response.ok || result?.success === false) {
       const error: any = new Error(
-        result?.message || `Request failed (${response.status})`
+        result?.message || `Request failed (${response.status}).`
       );
       error.status = response.status;
       throw error;
@@ -417,7 +364,7 @@ export default function DoctorAppointmentsScreen() {
   }
 
   function showNotice(
-    type: NoticeType,
+    type: Notice["type"],
     title: string,
     message: string
   ) {
@@ -430,381 +377,57 @@ export default function DoctorAppointmentsScreen() {
   }
 
   function extractArray(result: any) {
-    if (Array.isArray(result)) {
-      return result;
-    }
-
-    if (Array.isArray(result?.data)) {
-      return result.data;
-    }
-
-    if (Array.isArray(result?.data?.content)) {
-      return result.data.content;
-    }
-
-    if (Array.isArray(result?.content)) {
-      return result.content;
-    }
-
+    if (Array.isArray(result)) return result;
+    if (Array.isArray(result?.data)) return result.data;
+    if (Array.isArray(result?.data?.content)) return result.data.content;
+    if (Array.isArray(result?.content)) return result.content;
     return [];
   }
 
-  function normalizeAppointment(raw: any): Appointment {
-    return {
-      id: raw.id ?? raw.appointmentId ?? "",
-      patientId:
-        raw.patientId ??
-        raw.patient?.id ??
-        raw.userId ??
-        null,
-      patientName:
-        raw.patientName ??
-        raw.patient?.name ??
-        raw.name ??
-        "Patient",
-      phoneNumber:
-        raw.phoneNumber ??
-        raw.patient?.phoneNumber ??
-        raw.patient?.phone ??
-        "—",
-      age:
-        raw.age ??
-        raw.patient?.age ??
-        "—",
-      gender:
-        raw.gender ??
-        raw.patient?.gender ??
-        "—",
-      doctorName:
-        raw.doctorName ??
-        raw.doctor?.name ??
-        raw.doctor?.user?.name ??
-        "—",
-      specialization:
-        raw.doctorSpecialization ??
-        raw.specialization ??
-        raw.doctor?.specialization ??
-        "—",
-      date:
-        raw.appointmentDate ??
-        raw.date ??
-        "",
-      startTime:
-        raw.startTime ??
-        raw.time ??
-        "",
-      endTime:
-        raw.endTime ??
-        "",
-      mode: String(
-        raw.appointmentMode ??
-          raw.mode ??
-          "OFFLINE"
-      ).toUpperCase(),
-      status: String(
-        raw.status ??
-          "PENDING"
-      ).toUpperCase(),
-      symptoms:
-        raw.symptoms ??
-        "—",
-      history:
-        raw.pastMedicalHistory ??
-        raw.history ??
-        "—",
-      bookingFee: Number(
-        raw.bookingFee ??
-          0
-      ),
-      paymentStatus: String(
-        raw.paymentStatus ??
-          "PENDING"
-      ).toUpperCase(),
-      cancellationReason:
-        raw.cancellationReason ??
-        "",
-      rescheduleReason:
-        raw.rescheduleReason ??
-        "",
-      createdAt:
-        raw.createdAt ??
-        "",
-    };
-  }
+  async function loadAppointments() {
+    const result = await api("/appointments/doctor/my-appointments");
 
-  /* =====================================================
-     LOAD DATA
-  ===================================================== */
+    const data = Array.isArray(result?.data)
+      ? result.data
+      : Array.isArray(result?.data?.content)
+      ? result.data.content
+      : [];
+
+    setAppointments(data.map(normalizeAppointment));
+  }
 
   async function loadProfile() {
-    const savedName =
-      (await AsyncStorage.getItem("doctorName")) ||
-      "Doctor";
-
     const result = await api("/doctors/my-profile");
-    const doctor = result?.data || {};
-
-    const name =
-      doctor.name ||
-      doctor.doctorName ||
-      savedName;
-
-    const storedDoctorId =
-      await AsyncStorage.getItem("doctorId");
-
-    const id =
-      Number(
-        doctor.id ??
-          doctor.doctorId ??
-          storedDoctorId
-      ) || null;
+    const value = result?.data || {};
+    const name = value?.name || value?.doctorName || "Doctor";
 
     setDoctorName(name);
-    setDoctorId(id);
 
-    const values: [string, string][] = [
+    await AsyncStorage.multiSet([
       ["doctorName", name],
-      ["doctor", JSON.stringify(doctor)],
-    ];
+      ["doctor", JSON.stringify(value)],
+    ]);
 
-    if (id) {
-      values.push([
-        "doctorId",
-        String(id),
-      ]);
+    if (value?.id != null) {
+      await AsyncStorage.setItem("doctorId", String(value.id));
     }
-
-    await AsyncStorage.multiSet(values);
-
-    return id;
-  }
-
-  async function loadDoctorModes(id: number | null) {
-    if (!id) {
-      return;
-    }
-
-    try {
-      const result = await api(
-        `/doctor-availability/doctor/${id}`
-      );
-
-      const activeSlots = extractArray(result).filter(
-        (slot: any) =>
-          slot &&
-          slot.active !== false
-      );
-
-      const online = activeSlots.some(
-        (slot: any) =>
-          String(
-            slot.appointmentMode ||
-              slot.mode ||
-              ""
-          ).toUpperCase() === "ONLINE"
-      );
-
-      const offline = activeSlots.some(
-        (slot: any) =>
-          String(
-            slot.appointmentMode ||
-              slot.mode ||
-              ""
-          ).toUpperCase() === "OFFLINE"
-      );
-
-      if (!online && !offline) {
-        setHasOnline(null);
-        setHasOffline(null);
-        return;
-      }
-
-      setHasOnline(online);
-      setHasOffline(offline);
-
-      await AsyncStorage.multiSet([
-        ["doctorHasOnline", String(online)],
-        ["doctorHasOffline", String(offline)],
-      ]);
-
-      /*
-       * If the doctor is online-only, Appointment Details
-       * should not remain open.
-       */
-      if (online && !offline) {
-        router.replace("/doctor/consultations" as any);
-      }
-    } catch {
-      const storedOnline =
-        await AsyncStorage.getItem("doctorHasOnline");
-
-      const storedOffline =
-        await AsyncStorage.getItem("doctorHasOffline");
-
-      setHasOnline(
-        storedOnline === null
-          ? null
-          : storedOnline === "true"
-      );
-
-      setHasOffline(
-        storedOffline === null
-          ? null
-          : storedOffline === "true"
-      );
-    }
-  }
-
-  async function loadAppointments() {
-    const result = await api(
-      "/appointments/doctor/my-appointments"
-    );
-
-    const normalized = extractArray(result).map(
-      normalizeAppointment
-    );
-
-    setAppointments(normalized);
-
-    await loadExistingClinicalRecords(normalized);
-  }
-
-  async function loadExistingClinicalRecords(
-    appointmentList: Appointment[]
-  ) {
-    const completed = appointmentList.filter(
-      (appointment) =>
-        appointment.status === "COMPLETED" &&
-        appointment.patientId
-    );
-
-    const uniquePatientIds = Array.from(
-      new Set(
-        completed
-          .map((appointment) =>
-            String(appointment.patientId || "")
-          )
-          .filter(Boolean)
-      )
-    );
-
-    const prescriptionMap: Record<
-      string,
-      PrescriptionRecord | null
-    > = {};
-
-    const treatmentMap: Record<
-      string,
-      TreatmentPlanRecord[]
-    > = {};
-
-    await Promise.allSettled(
-      uniquePatientIds.map(async (patientId) => {
-        try {
-          const prescriptionResult = await api(
-            `/patient-records/patient/${patientId}/prescriptions`
-          );
-
-          const prescriptions = extractArray(
-            prescriptionResult
-          ) as PrescriptionRecord[];
-
-          completed
-            .filter(
-              (appointment) =>
-                String(appointment.patientId) ===
-                String(patientId)
-            )
-            .forEach((appointment) => {
-              const match =
-                prescriptions.find(
-                  (prescription) =>
-                    String(
-                      prescription.appointmentId || ""
-                    ) ===
-                    String(appointment.id)
-                ) || null;
-
-              prescriptionMap[
-                String(appointment.id)
-              ] = match;
-            });
-        } catch {
-          completed
-            .filter(
-              (appointment) =>
-                String(appointment.patientId) ===
-                String(patientId)
-            )
-            .forEach((appointment) => {
-              prescriptionMap[
-                String(appointment.id)
-              ] = null;
-            });
-        }
-
-        try {
-          const recordResult = await api(
-            `/patient-records/patient/${patientId}`
-          );
-
-          const data = recordResult?.data || {};
-
-          const plans = Array.isArray(
-            data.treatmentPlans
-          )
-            ? data.treatmentPlans
-            : Array.isArray(data.therapies)
-            ? data.therapies
-            : [];
-
-          treatmentMap[String(patientId)] =
-            plans;
-        } catch {
-          treatmentMap[String(patientId)] = [];
-        }
-      })
-    );
-
-    setPrescriptionByAppointment(
-      prescriptionMap
-    );
-
-    setTreatmentPlansByPatient(
-      treatmentMap
-    );
   }
 
   async function loadTherapists() {
-    try {
-      const result = await api(
-        "/therapists/getAll"
-      );
+    const result = await api("/therapists/getAll");
 
-      setTherapists(
-        extractArray(result)
-      );
-    } catch (error: any) {
-      setTherapists([]);
+    const list = Array.isArray(result?.data)
+      ? result.data.filter((item: Therapist) => item?.active !== false)
+      : [];
 
-      showNotice(
-        "error",
-        "Therapists Unavailable",
-        error?.message ||
-          "Unable to load therapists."
-      );
-    }
+    setTherapists(list);
   }
 
-  async function loadPage(showFullLoader = true) {
+  async function loadPage(fullLoader = true) {
     try {
-      if (showFullLoader) {
-        setLoading(true);
-      }
+      if (fullLoader) setLoading(true);
 
-      const role = String(
-        (await AsyncStorage.getItem("role")) || ""
-      )
+      const role = String((await AsyncStorage.getItem("role")) || "")
         .replace(/^ROLE_/i, "")
         .toUpperCase();
 
@@ -814,31 +437,23 @@ export default function DoctorAppointmentsScreen() {
         return;
       }
 
-      const profileCompleted =
-        await AsyncStorage.getItem(
-          "profileCompleted"
-        );
+      const profileCompleted = await AsyncStorage.getItem("profileCompleted");
 
       if (profileCompleted === "false") {
-        router.replace(
-          "/doctor/profile" as any
-        );
+        router.replace("/doctor/profile" as any);
         return;
       }
 
-      const id = await loadProfile();
-
-      await Promise.all([
-        loadDoctorModes(id),
+      await Promise.allSettled([
         loadAppointments(),
+        loadProfile(),
         loadTherapists(),
       ]);
     } catch (error: any) {
       showNotice(
         "error",
         "Unable to Load",
-        error?.message ||
-          "Could not load appointments."
+        error?.message || "Could not load appointments."
       );
     } finally {
       setLoading(false);
@@ -847,165 +462,64 @@ export default function DoctorAppointmentsScreen() {
   }
 
   useEffect(() => {
-    loadPage(true);
+    void loadPage(true);
   }, []);
 
-  /* =====================================================
-     FILTERS / STATS
-  ===================================================== */
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
 
-  const offlineAppointments = useMemo(() => {
-    return appointments.filter((appointment) => {
-      return (
-        String(
-          appointment.mode ||
-            "OFFLINE"
-        ).toUpperCase() === "OFFLINE"
-      );
-    });
-  }, [appointments]);
-
-  const filteredAppointments = useMemo(() => {
-    const query =
-      search.trim().toLowerCase();
-
-    return offlineAppointments.filter(
-      (appointment) => {
-        const matchesSearch =
-          !query ||
-          [
-            appointment.patientName,
-            appointment.phoneNumber,
-            appointment.symptoms,
-          ].some((value) =>
-            String(value || "")
-              .toLowerCase()
-              .includes(query)
-          );
-
-        const matchesDate =
-          !dateFilter ||
-          appointment.date === dateFilter;
-
-        const matchesStatus =
-          !statusFilter ||
-          appointment.status === statusFilter;
-
-        return (
-          matchesSearch &&
-          matchesDate &&
-          matchesStatus
-        );
-      }
+    return appointments.filter(
+      (item) =>
+        (!query ||
+          [item.patientName, item.phoneNumber, item.symptoms].some((value) =>
+            String(value).toLowerCase().includes(query)
+          )) &&
+        (!dateFilter || item.date === dateFilter) &&
+        (!statusFilter || item.status === statusFilter) &&
+        (!modeFilter || item.mode === modeFilter)
     );
-  }, [
-    offlineAppointments,
-    search,
-    dateFilter,
-    statusFilter,
-  ]);
+  }, [appointments, search, dateFilter, statusFilter, modeFilter]);
 
   useEffect(() => {
     setPage(1);
-  }, [
-    search,
-    dateFilter,
-    statusFilter,
-  ]);
+  }, [search, dateFilter, statusFilter, modeFilter]);
 
-  const pageCount = Math.max(
-    1,
-    Math.ceil(
-      filteredAppointments.length /
-        PAGE_SIZE
-    )
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+
+  const visibleAppointments = filtered.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
   );
 
-  const safePage = Math.min(
-    page,
-    pageCount
+  const summary = useMemo(
+    () => ({
+      total: appointments.length,
+      today: appointments.filter((item) => item.date === today).length,
+      pending: appointments.filter((item) =>
+        ["PENDING", "PAYMENT_PENDING", "RESCHEDULED"].includes(item.status)
+      ).length,
+      completed: appointments.filter((item) => item.status === "COMPLETED")
+        .length,
+      paid: appointments.filter((item) =>
+        ["SUCCESS", "PAID"].includes(item.paymentStatus)
+      ).length,
+    }),
+    [appointments, today]
   );
-
-  const visibleAppointments =
-    filteredAppointments.slice(
-      (safePage - 1) * PAGE_SIZE,
-      safePage * PAGE_SIZE
-    );
-
-  const stats = [
-    {
-      icon: "list-outline",
-      label: "Total",
-      value: offlineAppointments.length,
-    },
-    {
-      icon: "calendar-outline",
-      label: "Today",
-      value: offlineAppointments.filter(
-        (appointment) =>
-          appointment.date === today
-      ).length,
-    },
-    {
-      icon: "hourglass-outline",
-      label: "Pending",
-      value: offlineAppointments.filter(
-        (appointment) =>
-          [
-            "PENDING",
-            "PAYMENT_PENDING",
-            "RESCHEDULED",
-          ].includes(
-            appointment.status
-          )
-      ).length,
-    },
-    {
-      icon: "checkmark-circle-outline",
-      label: "Completed",
-      value: offlineAppointments.filter(
-        (appointment) =>
-          appointment.status ===
-          "COMPLETED"
-      ).length,
-    },
-    {
-      icon: "wallet-outline",
-      label: "Paid",
-      value: offlineAppointments.filter(
-        (appointment) =>
-          [
-            "SUCCESS",
-            "PAID",
-          ].includes(
-            appointment.paymentStatus
-          )
-      ).length,
-    },
-  ];
 
   function resetFilters() {
     setSearch("");
     setDateFilter("");
     setStatusFilter("");
+    setModeFilter("");
     setPage(1);
   }
 
-  /* =====================================================
-     COMPLETE APPOINTMENT
-  ===================================================== */
+  function openComplete(item: Appointment) {
+    const paid = ["SUCCESS", "PAID"].includes(item.paymentStatus);
 
-  function openComplete(
-    appointment: Appointment
-  ) {
-    if (
-      ![
-        "SUCCESS",
-        "PAID",
-      ].includes(
-        appointment.paymentStatus
-      )
-    ) {
+    if (!paid) {
       showNotice(
         "error",
         "Payment Required",
@@ -1014,10 +528,7 @@ export default function DoctorAppointmentsScreen() {
       return;
     }
 
-    if (
-      appointment.status ===
-      "COMPLETED"
-    ) {
+    if (item.status === "COMPLETED") {
       showNotice(
         "info",
         "Already Completed",
@@ -1026,14 +537,7 @@ export default function DoctorAppointmentsScreen() {
       return;
     }
 
-    if (
-      [
-        "CANCELLED",
-        "REJECTED",
-      ].includes(
-        appointment.status
-      )
-    ) {
+    if (["CANCELLED", "REJECTED"].includes(item.status)) {
       showNotice(
         "error",
         "Cannot Complete",
@@ -1042,21 +546,13 @@ export default function DoctorAppointmentsScreen() {
       return;
     }
 
-    setCompleteTarget(
-      appointment
-    );
+    setCompleteTarget(item);
   }
 
   async function completeAppointment() {
-    if (!completeTarget) {
-      return;
-    }
+    if (!completeTarget) return;
 
-    const appointmentSnapshot = {
-      ...completeTarget,
-    };
-
-    setCompleting(true);
+    setBusy(true);
 
     try {
       let result: any;
@@ -1064,36 +560,21 @@ export default function DoctorAppointmentsScreen() {
       try {
         result = await api(
           `/appointments/${encodeURIComponent(
-            String(
-              appointmentSnapshot.id
-            )
+            String(completeTarget.id)
           )}/complete`,
-          {
-            method: "PUT",
-          }
+          { method: "PUT" }
         );
       } catch (error: any) {
-        const message = String(
-          error?.message || ""
-        ).toLowerCase();
+        const message = String(error?.message || "").toLowerCase();
 
-        /*
-         * Keep this fallback because the older
-         * website code used it for servers where
-         * complete was exposed as GET.
-         */
         if (
           error?.status === 404 ||
           error?.status === 405 ||
-          message.includes(
-            "method not allowed"
-          )
+          message.includes("method not allowed")
         ) {
           result = await api(
             `/appointments/${encodeURIComponent(
-              String(
-                appointmentSnapshot.id
-              )
+              String(completeTarget.id)
             )}/complete`
           );
         } else {
@@ -1101,24 +582,12 @@ export default function DoctorAppointmentsScreen() {
         }
       }
 
-      const completedAppointment =
-        normalizeAppointment({
-          ...appointmentSnapshot,
-          ...(result?.data || {}),
-          status: "COMPLETED",
-        });
-
       setCompleteTarget(null);
-
-      setWorkflowTarget(
-        completedAppointment
-      );
 
       showNotice(
         "success",
         "Appointment Completed",
-        result?.message ||
-          "Appointment completed successfully."
+        result?.message || "Appointment marked as completed."
       );
 
       await loadAppointments();
@@ -1126,237 +595,69 @@ export default function DoctorAppointmentsScreen() {
       showNotice(
         "error",
         "Completion Failed",
-        error?.message ||
-          "Unable to complete the appointment."
+        error?.message || "Unable to complete appointment."
       );
     } finally {
-      setCompleting(false);
+      setBusy(false);
     }
   }
 
-  /* =====================================================
-     PRESCRIPTION
-  ===================================================== */
-
-  function openPrescription(
-    appointment: Appointment
-  ) {
-    if (
-      appointment.status !==
-      "COMPLETED"
-    ) {
-      showNotice(
-        "error",
-        "Complete Appointment First",
-        "Complete the appointment before creating the prescription."
-      );
-      return;
-    }
-
-    const existing =
-      prescriptionByAppointment[
-        String(appointment.id)
-      ];
-
-    setDetails(null);
-    setWorkflowTarget(null);
-
-    if (existing) {
-      setViewPrescription(existing);
-      return;
-    }
-
-    router.push({
-      pathname:
-        "/doctor/prescription-pad" as any,
-      params: {
-        appointmentId: String(
-          appointment.id
-        ),
-        patientId: String(
-          appointment.patientId || ""
-        ),
-      },
-    } as any);
-  }
-
-  function hasPrescription(
-    appointment: Appointment
-  ) {
-    return Boolean(
-      prescriptionByAppointment[
-        String(appointment.id)
-      ]
-    );
-  }
-
-  function getTreatmentPlans(
-    appointment: Appointment
-  ) {
-    if (!appointment.patientId) {
-      return [];
-    }
-
-    return (
-      treatmentPlansByPatient[
-        String(appointment.patientId)
-      ] || []
-    );
-  }
-
-  function hasTreatmentPlan(
-    appointment: Appointment
-  ) {
-    return (
-      getTreatmentPlans(appointment)
-        .length > 0
-    );
-  }
-
-  function openTreatmentAction(
-    appointment: Appointment
-  ) {
-    const existingPlans =
-      getTreatmentPlans(appointment);
-
-    if (existingPlans.length > 0) {
-      setDetails(null);
-      setWorkflowTarget(null);
-      setViewTreatmentPatientName(
-        appointment.patientName
-      );
-      setViewTreatmentPlans(
-        existingPlans
-      );
-      return;
-    }
-
-    openTreatmentPlan(appointment);
-  }
-
-  /* =====================================================
-     TREATMENT PLAN
-  ===================================================== */
-
-  function openTreatmentPlan(
-    appointment: Appointment
-  ) {
-    if (
-      appointment.status !==
-      "COMPLETED"
-    ) {
-      showNotice(
-        "error",
-        "Complete Appointment First",
-        "Treatment plans can be created after the appointment is completed."
-      );
-      return;
-    }
-
-    setDetails(null);
-    setWorkflowTarget(null);
-    setTreatmentTarget(
-      appointment
-    );
+  function openPlan(item: Appointment) {
+    setSelected(null);
+    setPlanTarget(item);
 
     setPlan({
       therapistId: "",
       treatmentName: "",
-      diagnosis:
-        appointment.symptoms === "—"
-          ? ""
-          : appointment.symptoms,
+      diagnosis: "",
       totalSessions: "",
-      startDate: today,
-      expectedEndDate: today,
+      startDate: "",
+      expectedEndDate: "",
       instructions: "",
       notes: "",
     });
   }
 
-  async function saveTreatmentPlan() {
-    if (!treatmentTarget) {
-      return;
-    }
-
-    const patientId = Number(
-      treatmentTarget.patientId
-    );
-
-    const therapistId = Number(
-      plan.therapistId
-    );
-
-    const totalSessions = Number(
-      plan.totalSessions
-    );
-
-    if (!patientId) {
-      showNotice(
-        "error",
-        "Patient Missing",
-        "Patient ID is missing."
-      );
-      return;
-    }
-
-    if (!therapistId) {
-      showNotice(
-        "error",
-        "Therapist Required",
-        "Please select a therapist."
-      );
-      return;
-    }
+  async function submitPlan() {
+    if (!planTarget) return;
 
     if (
-      !plan.treatmentName.trim()
-    ) {
-      showNotice(
-        "error",
-        "Treatment Required",
-        "Please enter the treatment name."
-      );
-      return;
-    }
-
-    if (!plan.diagnosis.trim()) {
-      showNotice(
-        "error",
-        "Diagnosis Required",
-        "Please enter the diagnosis."
-      );
-      return;
-    }
-
-    if (
-      !totalSessions ||
-      totalSessions < 1
-    ) {
-      showNotice(
-        "error",
-        "Invalid Sessions",
-        "Total sessions must be at least 1."
-      );
-      return;
-    }
-
-    if (
+      !plan.therapistId ||
+      !plan.treatmentName.trim() ||
+      !plan.diagnosis.trim() ||
+      !plan.totalSessions ||
       !plan.startDate ||
       !plan.expectedEndDate
     ) {
       showNotice(
         "error",
-        "Dates Required",
-        "Please select the start and expected end dates."
+        "Required Fields",
+        "Please complete all required treatment plan fields."
       );
       return;
     }
 
-    if (
-      plan.expectedEndDate <
-      plan.startDate
-    ) {
+    const sessions = Number(plan.totalSessions);
+
+    if (!Number.isFinite(sessions) || sessions < 1 || sessions > 365) {
+      showNotice(
+        "error",
+        "Invalid Sessions",
+        "Total sessions must be between 1 and 365."
+      );
+      return;
+    }
+
+    if (plan.startDate < today) {
+      showNotice(
+        "error",
+        "Invalid Start Date",
+        "Start date cannot be before today."
+      );
+      return;
+    }
+
+    if (plan.expectedEndDate < plan.startDate) {
       showNotice(
         "error",
         "Invalid Dates",
@@ -1365,2023 +666,1469 @@ export default function DoctorAppointmentsScreen() {
       return;
     }
 
-    setSavingPlan(true);
+    setBusy(true);
 
     try {
-      const result = await api(
-        "/treatment-plans/create",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            patientId,
-            therapistId,
-            treatmentName:
-              plan.treatmentName.trim(),
-            diagnosis:
-              plan.diagnosis.trim(),
-            totalSessions,
-            startDate:
-              plan.startDate,
-            expectedEndDate:
-              plan.expectedEndDate,
-            instructions:
-              plan.instructions.trim(),
-            notes:
-              plan.notes.trim(),
-          }),
-        }
-      );
+      const payload = {
+        ...plan,
+        patientId: Number(planTarget.patientId),
+        therapistId: Number(plan.therapistId),
+        totalSessions: Number(plan.totalSessions),
+      };
 
-      setTreatmentTarget(null);
+      const result = await api("/treatment-plans/create", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
 
-      await loadAppointments();
+      setPlanTarget(null);
 
       showNotice(
         "success",
         "Treatment Plan Created",
-        result?.message ||
-          "Treatment plan created successfully."
+        result?.message || "Treatment plan created successfully."
       );
     } catch (error: any) {
       showNotice(
         "error",
         "Unable to Create Plan",
-        error?.message ||
-          "Unable to create treatment plan."
+        error?.message || "Unable to create treatment plan."
       );
     } finally {
-      setSavingPlan(false);
+      setBusy(false);
     }
   }
 
-  /* =====================================================
-     DRAWER
-  ===================================================== */
-
-  const visibleMenu = MENU.filter(
-    (item) => {
-      if (
-        item.mode === "ONLINE" &&
-        hasOnline === false
-      ) {
-        return false;
-      }
-
-      if (
-        item.mode === "OFFLINE" &&
-        hasOffline === false
-      ) {
-        return false;
-      }
-
-      return true;
-    }
-  );
-
-  async function logout() {
-    setLogoutOpen(false);
-    await clearSession();
-    router.replace("/login" as any);
+  async function refresh() {
+    setRefreshing(true);
+    await loadPage(false);
   }
 
-  /* =====================================================
-     LOADING
-  ===================================================== */
+  function onFilterDateChange(_: any, value?: Date) {
+    if (Platform.OS === "android") setDatePickerOpen(false);
+    if (!value) return;
+    setDateFilter(localDateKey(value));
+  }
 
-  if (
-    !dmLoaded ||
-    !playfairLoaded ||
-    loading
-  ) {
+  function onPlanDateChange(_: any, value?: Date) {
+    const target = planDatePicker;
+
+    if (Platform.OS === "android") setPlanDatePicker(null);
+    if (!target || !value) return;
+
+    const key = localDateKey(value);
+
+    setPlan((current) => ({
+      ...current,
+      [target === "start" ? "startDate" : "expectedEndDate"]: key,
+    }));
+  }
+
+  if (loading) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator
-          size="large"
-          color={GREEN}
-        />
-        <Text style={styles.loaderText}>
-          Loading appointments...
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color={GREEN} />
+        <Text style={styles.loadingTitle}>Loading appointments</Text>
+        <Text style={styles.loadingText}>
+          Fetching your assigned patient appointments...
         </Text>
       </View>
     );
   }
 
-  /* =====================================================
-     SCREEN
-  ===================================================== */
-
   return (
     <View style={styles.screen}>
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.headerButton}
-          onPress={() =>
-            setMenuOpen(true)
-          }
-        >
-          <Ionicons
-            name="menu-outline"
-            size={25}
-            color={GREEN}
-          />
-        </TouchableOpacity>
-
-        <View style={{ flex: 1 }}>
-          <Text style={styles.eyebrow}>
-            DOCTOR PORTAL
-          </Text>
-
-          <Text style={styles.headerTitle}>
-            Appointment Details
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.headerButton}
-          onPress={() =>
-            loadPage(false)
-          }
-        >
-          <Ionicons
-            name="refresh-outline"
-            size={20}
-            color={GREEN}
-          />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.avatar}
-          onPress={() =>
-            router.push(
-              "/doctor/profile" as any
-            )
-          }
-        >
-          <Text style={styles.avatarText}>
-            {doctorInitial}
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <DoctorHeader
+        title="Appointment Details"
+        subtitle="View and manage your assigned patient appointments"
+        onMenuPress={() => setMenuOpen(true)}
+      />
 
       <ScrollView
-        showsVerticalScrollIndicator={
-          false
-        }
-        contentContainerStyle={{
-          paddingBottom: 35,
-        }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              loadPage(false);
-            }}
+            onRefresh={refresh}
             colors={[GREEN]}
             tintColor={GREEN}
           />
         }
+        contentContainerStyle={styles.content}
       >
-        {/* HERO */}
         <View style={styles.hero}>
-          <View
-            style={styles.heroOrb}
-          />
-
-          <View
-            style={styles.heroIcon}
-          >
-            <Ionicons
-              name="calendar-outline"
-              size={24}
-              color={GOLD_LIGHT}
-            />
+          <View style={styles.heroIcon}>
+            <Ionicons name="calendar-outline" size={25} color="#F5EBC9" />
           </View>
 
-          <Text style={styles.heroTag}>
-            APPOINTMENT MANAGEMENT
-          </Text>
-
-          <Text style={styles.heroTitle}>
-            Your Appointments
-          </Text>
-
+          <Text style={styles.eyebrow}>PATIENT CARE</Text>
+          <Text style={styles.heroTitle}>Your Appointments</Text>
           <Text style={styles.heroText}>
-            Search appointments, review
-            patient information and continue
-            the clinical workflow from your
-            phone.
+            Search appointments, review patient information and continue
+            clinical actions from one workspace.
           </Text>
+
+          <TouchableOpacity
+            style={styles.refreshButton}
+            onPress={() => loadPage(false)}
+          >
+            <Ionicons name="refresh-outline" size={17} color={WHITE} />
+            <Text style={styles.refreshText}>Refresh</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* STATS */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={
-            false
-          }
-          contentContainerStyle={
-            styles.stats
-          }
-        >
-          {stats.map((stat) => (
-            <View
-              key={stat.label}
-              style={styles.statCard}
-            >
-              <View
-                style={
-                  styles.statIcon
-                }
-              >
-                <Ionicons
-                  name={
-                    stat.icon as any
-                  }
-                  size={18}
-                  color={GREEN}
-                />
-              </View>
+        {notice.visible && (
+          <NoticeCard
+            notice={notice}
+            onClose={() =>
+              setNotice((current) => ({ ...current, visible: false }))
+            }
+          />
+        )}
 
-              <Text
-                style={
-                  styles.statValue
-                }
-              >
-                {stat.value}
-              </Text>
+        <View style={styles.statsGrid}>
+          <StatCard icon="list-outline" label="Total" value={summary.total} />
+          <StatCard icon="calendar-outline" label="Today" value={summary.today} />
+          <StatCard
+            icon="hourglass-outline"
+            label="Pending"
+            value={summary.pending}
+          />
+          <StatCard
+            icon="checkmark-circle-outline"
+            label="Completed"
+            value={summary.completed}
+          />
+          <StatCard icon="wallet-outline" label="Paid" value={summary.paid} />
+        </View>
 
-              <Text
-                style={
-                  styles.statLabel
-                }
-              >
-                {stat.label}
-              </Text>
-            </View>
-          ))}
-        </ScrollView>
-
-        {/* FILTERS */}
-        <View style={styles.filters}>
-          <View
-            style={styles.searchBox}
-          >
-            <Ionicons
-              name="search-outline"
-              size={18}
-              color={GOLD_DARK}
-            />
-
+        <View style={styles.searchPanel}>
+          <View style={styles.searchBox}>
+            <Ionicons name="search-outline" size={18} color={MUTED} />
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder="Search patient, phone or symptoms"
-              placeholderTextColor="#99A39D"
-              style={
-                styles.searchInput
-              }
+              placeholder="Name, phone or symptoms"
+              placeholderTextColor="#9AA59E"
+              style={styles.searchInput}
             />
-
-            {Boolean(search) && (
-              <TouchableOpacity
-                onPress={() =>
-                  setSearch("")
-                }
-              >
-                <Ionicons
-                  name="close-circle"
-                  size={18}
-                  color={MUTED}
-                />
+            {!!search && (
+              <TouchableOpacity onPress={() => setSearch("")}>
+                <Ionicons name="close-circle" size={18} color={MUTED} />
               </TouchableOpacity>
             )}
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={
-              false
-            }
-            contentContainerStyle={
-              styles.filterRow
-            }
+          <TouchableOpacity
+            style={[
+              styles.filterButton,
+              !!(dateFilter || statusFilter || modeFilter) &&
+                styles.filterButtonActive,
+            ]}
+            onPress={() => setFilterOpen(true)}
           >
-            <FilterChip
-              icon="calendar-outline"
-              text={
-                dateFilter
-                  ? formatDate(
-                      dateFilter
-                    )
-                  : "Date"
-              }
-              active={Boolean(
-                dateFilter
-              )}
-              onPress={() =>
-                setDatePickerOpen(
-                  true
-                )
+            <Ionicons
+              name="options-outline"
+              size={19}
+              color={
+                dateFilter || statusFilter || modeFilter ? WHITE : GREEN
               }
             />
+          </TouchableOpacity>
+        </View>
 
-            <FilterChip
-              icon="options-outline"
-              text={
-                statusFilter
-                  ? label(
-                      statusFilter
-                    )
-                  : "Status"
-              }
-              active={Boolean(
-                statusFilter
-              )}
-              onPress={() =>
-                setFilterChoiceOpen(
-                  true
-                )
-              }
-            />
-
-            {Boolean(
-              search ||
-                dateFilter ||
-                statusFilter
-            ) && (
+        {!!(dateFilter || statusFilter || modeFilter) && (
+          <View style={styles.chips}>
+            {!!dateFilter && (
               <FilterChip
-                icon="refresh-outline"
-                text="Reset"
-                active={false}
-                onPress={
-                  resetFilters
-                }
+                label={formatDate(dateFilter)}
+                onRemove={() => setDateFilter("")}
               />
             )}
-          </ScrollView>
-        </View>
 
-        {/* SECTION TITLE */}
-        <View
-          style={styles.sectionHeader}
-        >
-          <View>
-            <Text style={styles.eyebrow}>
-              PATIENT APPOINTMENTS
-            </Text>
-
-            <Text
-              style={
-                styles.sectionTitle
-              }
-            >
-              Appointment List
-            </Text>
-          </View>
-
-          <View
-            style={styles.countBadge}
-          >
-            <Text
-              style={
-                styles.countText
-              }
-            >
-              {
-                filteredAppointments.length
-              }{" "}
-              results
-            </Text>
-          </View>
-        </View>
-
-        {/* CARDS */}
-        <View style={styles.cards}>
-          {visibleAppointments.length ===
-          0 ? (
-            <EmptyState />
-          ) : (
-            visibleAppointments.map(
-              (appointment) => (
-                <AppointmentCard
-                  key={String(
-                    appointment.id
-                  )}
-                  appointment={
-                    appointment
-                  }
-                  onView={() =>
-                    setDetails(
-                      appointment
-                    )
-                  }
-                  onComplete={() =>
-                    openComplete(
-                      appointment
-                    )
-                  }
-                  onPrescription={() =>
-                    openPrescription(
-                      appointment
-                    )
-                  }
-                  prescriptionExists={hasPrescription(
-                    appointment
-                  )}
-                  treatmentPlanExists={hasTreatmentPlan(
-                    appointment
-                  )}
-                  onTreatment={() =>
-                    openTreatmentAction(
-                      appointment
-                    )
-                  }
-                />
-              )
-            )
-          )}
-        </View>
-
-        {/* PAGINATION */}
-        {filteredAppointments.length >
-          PAGE_SIZE && (
-          <View
-            style={
-              styles.pagination
-            }
-          >
-            <TouchableOpacity
-              disabled={
-                safePage === 1
-              }
-              style={[
-                styles.pageButton,
-                safePage === 1 && {
-                  opacity: 0.35,
-                },
-              ]}
-              onPress={() =>
-                setPage((current) =>
-                  Math.max(
-                    1,
-                    current - 1
-                  )
-                )
-              }
-            >
-              <Ionicons
-                name="chevron-back"
-                size={18}
-                color={GREEN}
+            {!!statusFilter && (
+              <FilterChip
+                label={titleCase(statusFilter)}
+                onRemove={() => setStatusFilter("")}
               />
-            </TouchableOpacity>
+            )}
 
-            <Text
-              style={
-                styles.pageInfo
-              }
-            >
-              Page {safePage} of{" "}
-              {pageCount}
-            </Text>
-
-            <TouchableOpacity
-              disabled={
-                safePage ===
-                pageCount
-              }
-              style={[
-                styles.pageButton,
-                safePage ===
-                  pageCount && {
-                  opacity: 0.35,
-                },
-              ]}
-              onPress={() =>
-                setPage((current) =>
-                  Math.min(
-                    pageCount,
-                    current + 1
-                  )
-                )
-              }
-            >
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={GREEN}
+            {!!modeFilter && (
+              <FilterChip
+                label={titleCase(modeFilter)}
+                onRemove={() => setModeFilter("")}
               />
+            )}
+
+            <TouchableOpacity onPress={resetFilters}>
+              <Text style={styles.clearFilters}>Clear all</Text>
             </TouchableOpacity>
           </View>
         )}
+
+        <View style={styles.panel}>
+          <View style={styles.panelHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.panelEyebrow}>CLINICAL SCHEDULE</Text>
+              <Text style={styles.panelTitle}>Appointment List</Text>
+              <Text style={styles.panelSub}>
+                Appointments assigned to your doctor account.
+              </Text>
+            </View>
+
+            <View style={styles.resultPill}>
+              <Text style={styles.resultText}>{filtered.length} results</Text>
+            </View>
+          </View>
+
+          <View style={styles.list}>
+            {visibleAppointments.length ? (
+              visibleAppointments.map((item) => (
+                <AppointmentCard
+                  key={String(item.id)}
+                  item={item}
+                  onView={() => setSelected(item)}
+                  onComplete={() => openComplete(item)}
+                  onPlan={() => openPlan(item)}
+                />
+              ))
+            ) : (
+              <View style={styles.empty}>
+                <Ionicons name="calendar-outline" size={30} color={GOLD_DARK} />
+                <Text style={styles.emptyTitle}>No appointments found</Text>
+                <Text style={styles.emptyText}>
+                  Try changing or resetting your filters.
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.pagination}>
+            <Text style={styles.paginationText}>
+              {filtered.length
+                ? `Showing ${(safePage - 1) * PAGE_SIZE + 1}-${Math.min(
+                    safePage * PAGE_SIZE,
+                    filtered.length
+                  )} of ${filtered.length}`
+                : "Showing 0 appointments"}
+            </Text>
+
+            <View style={styles.paginationButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.pageButton,
+                  safePage === 1 && styles.pageDisabled,
+                ]}
+                disabled={safePage === 1}
+                onPress={() => setPage((value) => Math.max(1, value - 1))}
+              >
+                <Ionicons name="chevron-back" size={17} color={GREEN} />
+              </TouchableOpacity>
+
+              <View style={styles.currentPage}>
+                <Text style={styles.currentPageText}>{safePage}</Text>
+              </View>
+
+              <Text style={styles.pageOf}>of {pageCount}</Text>
+
+              <TouchableOpacity
+                style={[
+                  styles.pageButton,
+                  safePage === pageCount && styles.pageDisabled,
+                ]}
+                disabled={safePage === pageCount}
+                onPress={() =>
+                  setPage((value) => Math.min(pageCount, value + 1))
+                }
+              >
+                <Ionicons name="chevron-forward" size={17} color={GREEN} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </ScrollView>
 
-      {/* DRAWER */}
-      <Modal
+      <FilterSheet
+        visible={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        date={dateFilter}
+        status={statusFilter}
+        mode={modeFilter}
+        setStatus={setStatusFilter}
+        setMode={setModeFilter}
+        chooseDate={() => setDatePickerOpen(true)}
+        clearDate={() => setDateFilter("")}
+        reset={resetFilters}
+      />
+
+      {datePickerOpen && (
+        <DateTimePicker
+          value={
+            dateFilter ? new Date(`${dateFilter}T00:00:00`) : new Date()
+          }
+          mode="date"
+          display={Platform.OS === "ios" ? "spinner" : "default"}
+          onChange={onFilterDateChange}
+        />
+      )}
+
+      <AppointmentDetailsModal
+        item={selected}
+        api={api}
+        getToken={getToken}
+        clearSession={clearSession}
+        onClose={() => setSelected(null)}
+        onPlan={(item) => openPlan(item)}
+        onNotice={showNotice}
+      />
+
+      <ConfirmCompleteModal
+        item={completeTarget}
+        busy={busy}
+        onClose={() => !busy && setCompleteTarget(null)}
+        onConfirm={completeAppointment}
+      />
+
+      <TreatmentPlanModal
+        item={planTarget}
+        plan={plan}
+        setPlan={setPlan}
+        therapists={therapists}
+        busy={busy}
+        onClose={() => !busy && setPlanTarget(null)}
+        onSubmit={submitPlan}
+        onChooseTherapist={() => setTherapistPickerOpen(true)}
+        onChooseDate={setPlanDatePicker}
+      />
+
+      {planDatePicker && (
+        <DateTimePicker
+          value={
+            new Date(
+              `${
+                planDatePicker === "start"
+                  ? plan.startDate || today
+                  : plan.expectedEndDate || plan.startDate || today
+              }T00:00:00`
+            )
+          }
+          mode="date"
+          minimumDate={
+            new Date(
+              `${
+                planDatePicker === "start"
+                  ? today
+                  : plan.startDate || today
+              }T00:00:00`
+            )
+          }
+          display={Platform.OS === "ios" ? "spinner" : "default"}
+          onChange={onPlanDateChange}
+        />
+      )}
+
+      <TherapistPicker
+        visible={therapistPickerOpen}
+        therapists={therapists}
+        selectedId={plan.therapistId}
+        onClose={() => setTherapistPickerOpen(false)}
+        onSelect={(id) => {
+          setPlan((current) => ({
+            ...current,
+            therapistId: String(id),
+          }));
+          setTherapistPickerOpen(false);
+        }}
+      />
+
+      <DoctorDrawer
         visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        activeRoute="/doctor/appointments"
+      />
+    </View>
+  );
+}
+
+function AppointmentCard({
+  item,
+  onView,
+  onComplete,
+  onPlan,
+}: {
+  item: Appointment;
+  onView: () => void;
+  onComplete: () => void;
+  onPlan: () => void;
+}) {
+  const paid = ["SUCCESS", "PAID"].includes(item.paymentStatus);
+  const completed = item.status === "COMPLETED";
+
+  return (
+    <View style={styles.appointmentCard}>
+      <View style={styles.cardTop}>
+        <View style={styles.patientBlock}>
+          <View style={styles.patientAvatar}>
+            <Text style={styles.patientAvatarText}>
+              {item.patientName.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.patientName}>{item.patientName}</Text>
+            <Text style={styles.patientPhone}>{item.phoneNumber}</Text>
+          </View>
+        </View>
+
+        <Badge value={item.status} />
+      </View>
+
+      <View style={styles.infoGrid}>
+        <InfoItem
+          icon="calendar-outline"
+          label="Date"
+          value={formatDate(item.date)}
+        />
+        <InfoItem
+          icon="time-outline"
+          label="Time"
+          value={`${formatTime(item.startTime)}${
+            item.endTime ? ` - ${formatTime(item.endTime)}` : ""
+          }`}
+        />
+        <InfoItem
+          icon="videocam-outline"
+          label="Mode"
+          value={titleCase(item.mode)}
+        />
+        <InfoItem
+          icon="wallet-outline"
+          label="Payment"
+          value={titleCase(item.paymentStatus)}
+        />
+      </View>
+
+      <View style={styles.symptomBox}>
+        <Text style={styles.symptomLabel}>SYMPTOMS</Text>
+        <Text style={styles.symptomText} numberOfLines={3}>
+          {item.symptoms}
+        </Text>
+      </View>
+
+      <View style={styles.cardActions}>
+        <TouchableOpacity style={styles.viewButton} onPress={onView}>
+          <Ionicons name="eye-outline" size={17} color={GREEN} />
+          <Text style={styles.viewButtonText}>View</Text>
+        </TouchableOpacity>
+
+        {paid &&
+          !completed &&
+          !["CANCELLED", "REJECTED"].includes(item.status) && (
+            <TouchableOpacity style={styles.completeButton} onPress={onComplete}>
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={17}
+                color={SUCCESS}
+              />
+              <Text style={styles.completeButtonText}>Complete</Text>
+            </TouchableOpacity>
+          )}
+
+        {completed && (
+          <TouchableOpacity style={styles.planButton} onPress={onPlan}>
+            <Ionicons name="medkit-outline" size={17} color={GOLD_DARK} />
+            <Text style={styles.planButtonText}>Plan</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function AppointmentDetailsModal({
+  item,
+  api,
+  getToken,
+  clearSession,
+  onClose,
+  onPlan,
+  onNotice,
+}: {
+  item: Appointment | null;
+  api: (path: string, options?: RequestInit) => Promise<any>;
+  getToken: () => Promise<string>;
+  clearSession: () => Promise<void>;
+  onClose: () => void;
+  onPlan: (item: Appointment) => void;
+  onNotice: (
+    type: "success" | "error" | "info",
+    title: string,
+    message: string
+  ) => void;
+}) {
+  const completed = item?.status === "COMPLETED";
+
+  const [prescription, setPrescription] = useState<Prescription | null>(null);
+  const [prescriptionView, setPrescriptionView] =
+    useState<Prescription | null>(null);
+  const [prescriptionLoading, setPrescriptionLoading] = useState(false);
+  const [prescriptionBusy, setPrescriptionBusy] = useState(false);
+  const [prescriptionError, setPrescriptionError] = useState("");
+
+  useEffect(() => {
+    setPrescription(null);
+    setPrescriptionView(null);
+    setPrescriptionError("");
+
+    if (!item || !completed) {
+      setPrescriptionLoading(false);
+      return;
+    }
+
+    let active = true;
+    setPrescriptionLoading(true);
+
+    api(
+      `/prescriptions/appointment/${encodeURIComponent(String(item.id))}`
+    )
+      .then((result) => {
+        if (!active) return;
+
+        const existing = result?.data || null;
+        setPrescription(existing?.id ? existing : null);
+      })
+      .catch((error: any) => {
+        if (active) {
+          setPrescriptionError(
+            error?.message || "Unable to check prescription status."
+          );
+        }
+      })
+      .finally(() => active && setPrescriptionLoading(false));
+
+    return () => {
+      active = false;
+    };
+  }, [item?.id, item?.patientId, completed]);
+
+  if (!item) return null;
+
+  const prescriptionStatus = String(prescription?.status || "").toUpperCase();
+
+  function openPrescriptionPad() {
+    onClose();
+
+    router.push({
+      pathname: "/doctor/prescription-pad" as any,
+      params: {
+        appointmentId: String(item.id),
+        patientId: String(item.patientId || ""),
+        ...(prescription?.id
+          ? { prescriptionId: String(prescription.id) }
+          : {}),
+      },
+    } as any);
+  }
+
+  async function viewPrescription() {
+  if (!prescription?.id) return;
+
+  setPrescriptionBusy(true);
+  setPrescriptionError("");
+
+  try {
+    const doctorToken = await AsyncStorage.getItem("doctorToken");
+    const normalToken = await AsyncStorage.getItem("token");
+    const role = await AsyncStorage.getItem("role");
+    const doctorId = await AsyncStorage.getItem("doctorId");
+    const userId = await AsyncStorage.getItem("userId");
+    const email = await AsyncStorage.getItem("email");
+
+    console.log("====== MOBILE DOCTOR DEBUG ======");
+    console.log("ROLE:", role);
+    console.log("DOCTOR ID:", doctorId);
+    console.log("USER ID:", userId);
+    console.log("EMAIL:", email);
+    console.log("DOCTOR TOKEN EXISTS:", Boolean(doctorToken));
+    console.log("NORMAL TOKEN EXISTS:", Boolean(normalToken));
+    console.log("SAME TOKEN:", doctorToken === normalToken);
+    console.log("PRESCRIPTION ID:", prescription.id);
+    console.log("APPOINTMENT ID:", item.id);
+    console.log("PATIENT ID:", item.patientId);
+    console.log("API BASE URL:", API_BASE_URL);
+    console.log("===============================");
+
+    console.log(
+  "PRESCRIPTION SUMMARY:",
+  JSON.stringify(prescription, null, 2)
+);
+
+    const result = await api(
+  `/prescriptions/${encodeURIComponent(
+    String(prescription.id)
+  )}`
+);
+
+    console.log("PRESCRIPTION API SUCCESS:", result);
+
+    setPrescriptionView(
+      mergePrescriptionData(prescription, result?.data)
+    );
+  } catch (error: any) {
+    console.log("VIEW PRESCRIPTION ERROR STATUS:", error?.status);
+    console.log(
+      "VIEW PRESCRIPTION ERROR:",
+      error?.message || error
+    );
+
+    setPrescriptionError(
+      error?.message || "Unable to load prescription."
+    );
+  } finally {
+    setPrescriptionBusy(false);
+  }
+}
+
+  async function finalizePrescription() {
+    if (!prescription?.id || prescriptionStatus !== "DRAFT") return;
+
+    setPrescriptionBusy(true);
+    setPrescriptionError("");
+
+    try {
+      await api(
+        `/prescriptions/${encodeURIComponent(
+          String(prescription.id)
+        )}/finalize`,
+        { method: "PUT" }
+      );
+
+      const result = await api(
+  `/prescriptions/${encodeURIComponent(
+    String(prescription.id)
+  )}`
+);
+
+      const finalized = mergePrescriptionData(
+        {
+          ...prescription,
+          status: "FINALIZED",
+        },
+        result?.data
+      );
+
+      setPrescription(finalized);
+      setPrescriptionView(finalized);
+
+      onNotice(
+        "success",
+        "Prescription Finalized",
+        "The prescription was finalized successfully."
+      );
+    } catch (error: any) {
+      setPrescriptionError(
+        error?.message || "Unable to finalize prescription."
+      );
+    } finally {
+      setPrescriptionBusy(false);
+    }
+  }
+
+  async function downloadPrescription() {
+    if (!prescription?.id) return;
+
+    setPrescriptionBusy(true);
+    setPrescriptionError("");
+
+    try {
+      const token = await getToken();
+
+      const target = `${FileSystem.cacheDirectory}prescription-${prescription.id}.pdf`;
+
+      const download = await FileSystem.downloadAsync(
+        `${API_BASE_URL}/prescriptions/${encodeURIComponent(
+          String(prescription.id)
+        )}/download`,
+        target,
+        {
+          headers: {
+            Accept: "application/pdf",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (download.status === 401) {
+        await clearSession();
+        router.replace("/login" as any);
+        return;
+      }
+
+      if (download.status === 403) {
+        throw new Error(
+          "You do not have permission to download this prescription."
+        );
+      }
+
+      if (download.status < 200 || download.status >= 300) {
+        throw new Error(
+          `Unable to download prescription (${download.status}).`
+        );
+      }
+
+      if (!(await Sharing.isAvailableAsync())) {
+        throw new Error(
+          "Sharing is not available on this device. The prescription was downloaded to the app cache."
+        );
+      }
+
+      await Sharing.shareAsync(download.uri, {
+        mimeType: "application/pdf",
+        dialogTitle: `Prescription #${prescription.id}`,
+        UTI: "com.adobe.pdf",
+      });
+    } catch (error: any) {
+      setPrescriptionError(
+        error?.message || "Unable to download prescription."
+      );
+    } finally {
+      setPrescriptionBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Modal
+        visible={Boolean(item) && !prescriptionView}
         transparent
         animationType="fade"
         statusBarTranslucent
-        onRequestClose={() =>
-          setMenuOpen(false)
-        }
+        onRequestClose={onClose}
       >
-        <View
-          style={styles.drawerRoot}
-        >
-          <Pressable
-            style={styles.backdrop}
-            onPress={() =>
-              setMenuOpen(false)
-            }
-          />
+        <View style={styles.modalRoot}>
+          <Pressable style={styles.backdrop} onPress={onClose} />
 
-          <View style={styles.drawer}>
-            <View
-              style={
-                styles.drawerBrand
-              }
-            >
-              <View
-                style={styles.brandIcon}
-              >
-                <Ionicons
-                  name="medical"
-                  size={25}
-                  color={GOLD}
-                />
-              </View>
+          <View style={styles.detailsSheet}>
+            <View style={styles.sheetHandle} />
 
+            <View style={styles.detailsHeader}>
               <View style={{ flex: 1 }}>
-                <Text
-                  style={
-                    styles.brandTitle
-                  }
-                >
-                  NeoLife
-                </Text>
-
-                <Text
-                  style={
-                    styles.brandSub
-                  }
-                >
-                  DOCTOR PORTAL
-                </Text>
+                <Text style={styles.detailsTitle}>Appointment Details</Text>
+                <Text style={styles.detailsSub}>#{item.id}</Text>
               </View>
 
-              <TouchableOpacity
-                style={
-                  styles.drawerClose
-                }
-                onPress={() =>
-                  setMenuOpen(false)
-                }
-              >
-                <Ionicons
-                  name="close"
-                  size={22}
-                  color={GREEN}
-                />
+              <TouchableOpacity style={styles.closeCircle} onPress={onClose}>
+                <Ionicons name="close" size={20} color={GREEN} />
               </TouchableOpacity>
             </View>
 
-            <View
-              style={
-                styles.drawerDoctor
-              }
-            >
-              <View
-                style={
-                  styles.drawerAvatar
-                }
-              >
-                <Text
-                  style={
-                    styles.drawerAvatarText
-                  }
-                >
-                  {doctorInitial}
-                </Text>
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text
-                  numberOfLines={1}
-                  style={
-                    styles.drawerName
-                  }
-                >
-                  {doctorName}
-                </Text>
-
-                <Text
-                  style={
-                    styles.drawerRole
-                  }
-                >
-                  Doctor
-                </Text>
-              </View>
-            </View>
-
             <ScrollView
-              showsVerticalScrollIndicator={
-                false
-              }
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.detailsBody}
             >
-              {[
-                "MAIN",
-                "CLINICAL",
-                "FINANCE",
-              ].map((section) => {
-                const sectionItems =
-                  visibleMenu.filter(
-                    (item) =>
-                      item.section ===
-                      section
-                  );
+              <PatientHeader item={item} />
 
-                if (
-                  sectionItems.length === 0
-                ) {
-                  return null;
-                }
+              <View style={styles.detailsGrid}>
+                <Detail label="Appointment ID" value={`#${item.id}`} />
+                <Detail
+                  label="Date & time"
+                  value={`${formatDate(item.date)} · ${formatTime(
+                    item.startTime
+                  )}`}
+                />
+                <Detail label="Mode" value={titleCase(item.mode)} />
+                <Detail label="Status" value={titleCase(item.status)} />
+                <Detail
+                  label="Booking fee"
+                  value={`₹${Number(item.bookingFee || 0).toLocaleString(
+                    "en-IN"
+                  )}`}
+                />
+                <Detail
+                  label="Payment"
+                  value={titleCase(item.paymentStatus)}
+                />
+                <Detail wide label="Symptoms" value={item.symptoms} />
+                <Detail
+                  wide
+                  label="Past medical history"
+                  value={item.history}
+                />
 
-                return (
-                  <View
-                    key={section}
-                    style={{
-                      marginTop: 13,
-                    }}
-                  >
-                    <Text
-                      style={
-                        styles.menuLabel
-                      }
-                    >
-                      {section}
+                {!!item.rescheduleReason && (
+                  <Detail
+                    wide
+                    label="Reschedule reason"
+                    value={item.rescheduleReason}
+                  />
+                )}
+
+                {!!item.cancellationReason && (
+                  <Detail
+                    wide
+                    label="Cancellation reason"
+                    value={item.cancellationReason}
+                  />
+                )}
+              </View>
+
+              {!!prescriptionError && (
+                <View style={styles.errorBox}>
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={18}
+                    color={DANGER}
+                  />
+                  <Text style={styles.errorText}>{prescriptionError}</Text>
+                </View>
+              )}
+
+              {completed &&
+                !prescriptionLoading &&
+                prescription && (
+                  <View style={styles.prescriptionState}>
+                    <Text style={styles.prescriptionLabel}>PRESCRIPTION</Text>
+                    <Text style={styles.prescriptionTitle}>
+                      #{prescription.id} · {titleCase(prescription.status)}
                     </Text>
-
-                    {sectionItems.map(
-                      (item) => {
-                        const active =
-                          item.label ===
-                          "Appointment Details";
-
-                        return (
-                          <TouchableOpacity
-                            key={
-                              item.label
-                            }
-                            style={[
-                              styles.menuItem,
-                              active &&
-                                styles.menuActive,
-                            ]}
-                            onPress={() => {
-                              setMenuOpen(
-                                false
-                              );
-
-                              if (!active) {
-                                router.push(
-                                  item.route as any
-                                );
-                              }
-                            }}
-                          >
-                            <View
-                              style={[
-                                styles.menuIcon,
-                                active && {
-                                  backgroundColor:
-                                    MINT,
-                                },
-                              ]}
-                            >
-                              <Ionicons
-                                name={
-                                  item.icon as any
-                                }
-                                size={19}
-                                color={
-                                  active
-                                    ? GREEN
-                                    : GOLD
-                                }
-                              />
-                            </View>
-
-                            <Text
-                              style={[
-                                styles.menuText,
-                                active && {
-                                  color:
-                                    GREEN,
-                                },
-                              ]}
-                            >
-                              {
-                                item.label
-                              }
-                            </Text>
-
-                            <Ionicons
-                              name="chevron-forward"
-                              size={15}
-                              color={
-                                active
-                                  ? GREEN
-                                  : "#AFC0B6"
-                              }
-                            />
-                          </TouchableOpacity>
-                        );
-                      }
-                    )}
+                    <Text style={styles.prescriptionMeta}>
+                      {Array.isArray(prescription.items)
+                        ? prescription.items.length
+                        : 0}{" "}
+                      medicine item(s)
+                    </Text>
+                    <Text style={styles.prescriptionHelp}>
+                      {prescriptionStatus === "DRAFT"
+                        ? "The prescription is saved as a draft. You can edit it or finalize it."
+                        : "The prescription is finalized and read-only."}
+                    </Text>
                   </View>
-                );
-              })}
+                )}
             </ScrollView>
 
-            <TouchableOpacity
-              style={styles.logout}
-              onPress={() => {
-                setMenuOpen(false);
-                setLogoutOpen(true);
-              }}
-            >
-              <Ionicons
-                name="log-out-outline"
-                size={19}
-                color={WHITE}
-              />
-
-              <Text
-                style={
-                  styles.logoutText
-                }
+            <View style={styles.detailsActions}>
+              <TouchableOpacity
+                style={styles.secondaryAction}
+                onPress={onClose}
               >
-                Logout
-              </Text>
-            </TouchableOpacity>
+                <Text style={styles.secondaryActionText}>Close</Text>
+              </TouchableOpacity>
+
+              {completed && (
+                <TouchableOpacity
+                  style={styles.planAction}
+                  onPress={() => onPlan(item)}
+                >
+                  <Ionicons name="medkit-outline" size={17} color={GOLD_DARK} />
+                  <Text style={styles.planActionText}>Treatment Plan</Text>
+                </TouchableOpacity>
+              )}
+
+              {completed && prescriptionLoading && (
+                <View style={styles.disabledAction}>
+                  <ActivityIndicator size="small" color={GREEN} />
+                  <Text style={styles.disabledActionText}>
+                    Checking prescription…
+                  </Text>
+                </View>
+              )}
+
+              {completed &&
+                !prescriptionLoading &&
+                !prescription && (
+                  <TouchableOpacity
+                    style={styles.primaryAction}
+                    onPress={openPrescriptionPad}
+                  >
+                    <Ionicons
+                      name="document-text-outline"
+                      size={17}
+                      color={WHITE}
+                    />
+                    <Text style={styles.primaryActionText}>
+                      Create Prescription
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+              {completed && prescriptionStatus === "DRAFT" && (
+                <>
+                  <TouchableOpacity
+                    style={styles.editAction}
+                    onPress={openPrescriptionPad}
+                    disabled={prescriptionBusy}
+                  >
+                    <Ionicons
+                      name="create-outline"
+                      size={17}
+                      color={INFO}
+                    />
+                    <Text style={styles.editActionText}>
+                      Edit / Save Draft
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.primaryAction}
+                    onPress={finalizePrescription}
+                    disabled={prescriptionBusy}
+                  >
+                    {prescriptionBusy ? (
+                      <ActivityIndicator size="small" color={WHITE} />
+                    ) : (
+                      <Ionicons
+                        name="checkmark-done-outline"
+                        size={17}
+                        color={WHITE}
+                      />
+                    )}
+                    <Text style={styles.primaryActionText}>
+                      {prescriptionBusy
+                        ? "Finalizing…"
+                        : "Finalize Prescription"}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {completed && prescriptionStatus === "FINALIZED" && (
+                <>
+                  <TouchableOpacity
+                    style={styles.primaryAction}
+                    onPress={viewPrescription}
+                    disabled={prescriptionBusy}
+                  >
+                    {prescriptionBusy ? (
+                      <ActivityIndicator size="small" color={WHITE} />
+                    ) : (
+                      <Ionicons
+                        name="eye-outline"
+                        size={17}
+                        color={WHITE}
+                      />
+                    )}
+                    <Text style={styles.primaryActionText}>
+                      View Prescription
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.downloadAction}
+                    onPress={downloadPrescription}
+                    disabled={prescriptionBusy}
+                  >
+                    <Ionicons
+                      name="download-outline"
+                      size={17}
+                      color={PURPLE}
+                    />
+                    <Text style={styles.downloadActionText}>
+                      Download PDF
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
           </View>
         </View>
       </Modal>
 
-      {/* DETAILS SHEET */}
-      <BottomSheet
-        visible={Boolean(details)}
-        title="Appointment Details"
-        eyebrow="PATIENT APPOINTMENT"
-        onClose={() =>
-          setDetails(null)
-        }
-      >
-        {details && (
-          <>
-            <PatientHeader
-              appointment={details}
-            />
-
-            <View
-              style={
-                styles.detailGrid
-              }
-            >
-              <DetailCard
-                label="Appointment ID"
-                value={`#${details.id}`}
-              />
-
-              <DetailCard
-                label="Date & Time"
-                value={`${formatDate(
-                  details.date
-                )} · ${formatTime(
-                  details.startTime
-                )}`}
-              />
-
-              <DetailCard
-                label="Mode"
-                value={label(
-                  details.mode
-                )}
-              />
-
-              <DetailCard
-                label="Status"
-                value={label(
-                  details.status
-                )}
-              />
-
-              <DetailCard
-                label="Booking Fee"
-                value={`₹${details.bookingFee.toLocaleString(
-                  "en-IN"
-                )}`}
-              />
-
-              <DetailCard
-                label="Payment"
-                value={label(
-                  details.paymentStatus
-                )}
-              />
-            </View>
-
-            <DetailLong
-              label="Symptoms"
-              value={details.symptoms}
-            />
-
-            <DetailLong
-              label="Past Medical History"
-              value={details.history}
-            />
-
-            {Boolean(
-              details.rescheduleReason
-            ) && (
-              <DetailLong
-                label="Reschedule Reason"
-                value={
-                  details.rescheduleReason
-                }
-              />
-            )}
-
-            {Boolean(
-              details.cancellationReason
-            ) && (
-              <DetailLong
-                label="Cancellation Reason"
-                value={
-                  details.cancellationReason
-                }
-              />
-            )}
-
-            {details.status ===
-              "COMPLETED" && (
-              <View
-                style={
-                  styles.sheetActions
-                }
-              >
-                <TouchableOpacity
-                  style={
-                    styles.secondaryButton
-                  }
-                  onPress={() =>
-                    openTreatmentAction(
-                      details
-                    )
-                  }
-                >
-                  <Ionicons
-                    name="medkit-outline"
-                    size={17}
-                    color={GREEN}
-                  />
-                  <Text
-                    style={
-                      styles.secondaryButtonText
-                    }
-                  >
-                    {hasTreatmentPlan(details)
-                      ? "View Treatment Plans"
-                      : "Create Treatment Plan"}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={
-                    styles.primaryButton
-                  }
-                  onPress={() =>
-                    openPrescription(
-                      details
-                    )
-                  }
-                >
-                  <Ionicons
-                    name="document-text-outline"
-                    size={17}
-                    color={WHITE}
-                  />
-                  <Text
-                    style={
-                      styles.primaryButtonText
-                    }
-                  >
-                    {hasPrescription(details)
-                      ? "View Prescription"
-                      : "Create Prescription"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </>
-        )}
-      </BottomSheet>
-
-      {/* COMPLETE CONFIRMATION */}
-      <ConfirmCompleteModal
-        appointment={completeTarget}
-        busy={completing}
-        onCancel={() =>
-          setCompleteTarget(null)
-        }
-        onConfirm={
-          completeAppointment
-        }
+      <PrescriptionViewModal
+        prescription={prescriptionView}
+        onClose={() => setPrescriptionView(null)}
       />
-
-      {/* POST-COMPLETION WORKFLOW */}
-      <WorkflowModal
-        appointment={workflowTarget}
-        onClose={() =>
-          setWorkflowTarget(null)
-        }
-        onPrescription={() => {
-          if (workflowTarget) {
-            openPrescription(
-              workflowTarget
-            );
-          }
-        }}
-        onTreatment={() => {
-          if (workflowTarget) {
-            openTreatmentAction(
-              workflowTarget
-            );
-          }
-        }}
-      />
-
-      {/* TREATMENT PLAN SHEET */}
-      <BottomSheet
-        visible={Boolean(
-          treatmentTarget
-        )}
-        title="Create Treatment Plan"
-        eyebrow="THERAPY PLAN"
-        onClose={() =>
-          setTreatmentTarget(null)
-        }
-      >
-        {treatmentTarget && (
-          <>
-            <PatientHeader
-              appointment={
-                treatmentTarget
-              }
-            />
-
-            <Field label="THERAPIST">
-              <TouchableOpacity
-                style={styles.inputBox}
-                onPress={() =>
-                  setTherapistChoiceOpen(
-                    true
-                  )
-                }
-              >
-                <Ionicons
-                  name="person-outline"
-                  size={17}
-                  color={GOLD_DARK}
-                />
-
-                <Text
-                  style={
-                    styles.inputBoxText
-                  }
-                >
-                  {therapistLabel(
-                    therapists,
-                    plan.therapistId
-                  ) ||
-                    "Select therapist"}
-                </Text>
-
-                <Ionicons
-                  name="chevron-down"
-                  size={16}
-                  color={MUTED}
-                />
-              </TouchableOpacity>
-            </Field>
-
-            <Field label="TREATMENT NAME">
-              <TextInput
-                value={
-                  plan.treatmentName
-                }
-                onChangeText={(value) =>
-                  setPlan(
-                    (current) => ({
-                      ...current,
-                      treatmentName:
-                        value,
-                    })
-                  )
-                }
-                placeholder="Example: Panchakarma Therapy"
-                placeholderTextColor="#9AA59E"
-                style={
-                  styles.textInput
-                }
-              />
-            </Field>
-
-            <Field label="DIAGNOSIS">
-              <TextInput
-                value={plan.diagnosis}
-                onChangeText={(value) =>
-                  setPlan(
-                    (current) => ({
-                      ...current,
-                      diagnosis:
-                        value,
-                    })
-                  )
-                }
-                placeholder="Enter diagnosis"
-                placeholderTextColor="#9AA59E"
-                style={
-                  styles.textInput
-                }
-              />
-            </Field>
-
-            <Field label="TOTAL SESSIONS">
-              <TextInput
-                value={
-                  plan.totalSessions
-                }
-                onChangeText={(value) =>
-                  setPlan(
-                    (current) => ({
-                      ...current,
-                      totalSessions:
-                        value.replace(
-                          /[^0-9]/g,
-                          ""
-                        ),
-                    })
-                  )
-                }
-                keyboardType="number-pad"
-                placeholder="Example: 14"
-                placeholderTextColor="#9AA59E"
-                style={
-                  styles.textInput
-                }
-              />
-            </Field>
-
-            <View
-              style={
-                styles.dateRow
-              }
-            >
-              <View
-                style={{ flex: 1 }}
-              >
-                <Field label="START DATE">
-                  <DateButton
-                    value={
-                      plan.startDate
-                    }
-                    onPress={() =>
-                      setPlanDatePicker(
-                        "start"
-                      )
-                    }
-                  />
-                </Field>
-              </View>
-
-              <View
-                style={{ flex: 1 }}
-              >
-                <Field label="EXPECTED END">
-                  <DateButton
-                    value={
-                      plan.expectedEndDate
-                    }
-                    onPress={() =>
-                      setPlanDatePicker(
-                        "end"
-                      )
-                    }
-                  />
-                </Field>
-              </View>
-            </View>
-
-            <Field label="INSTRUCTIONS">
-              <TextInput
-                value={
-                  plan.instructions
-                }
-                onChangeText={(value) =>
-                  setPlan(
-                    (current) => ({
-                      ...current,
-                      instructions:
-                        value,
-                    })
-                  )
-                }
-                multiline
-                textAlignVertical="top"
-                placeholder="Therapy instructions"
-                placeholderTextColor="#9AA59E"
-                style={styles.textArea}
-              />
-            </Field>
-
-            <Field label="NOTES">
-              <TextInput
-                value={plan.notes}
-                onChangeText={(value) =>
-                  setPlan(
-                    (current) => ({
-                      ...current,
-                      notes: value,
-                    })
-                  )
-                }
-                multiline
-                textAlignVertical="top"
-                placeholder="Clinical notes or precautions"
-                placeholderTextColor="#9AA59E"
-                style={styles.textArea}
-              />
-            </Field>
-
-            <View style={styles.note}>
-              <Ionicons
-                name="information-circle-outline"
-                size={18}
-                color={GOLD_DARK}
-              />
-
-              <Text
-                style={
-                  styles.noteText
-                }
-              >
-                The logged-in doctor is
-                automatically connected by
-                the backend.
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              disabled={savingPlan}
-              style={[
-                styles.primaryButton,
-                {
-                  width: "100%",
-                  marginTop: 16,
-                },
-              ]}
-              onPress={
-                saveTreatmentPlan
-              }
-            >
-              {savingPlan ? (
-                <ActivityIndicator
-                  color={WHITE}
-                />
-              ) : (
-                <>
-                  <Ionicons
-                    name="add"
-                    size={18}
-                    color={WHITE}
-                  />
-
-                  <Text
-                    style={
-                      styles.primaryButtonText
-                    }
-                  >
-                    Create Plan
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </>
-        )}
-      </BottomSheet>
-
-      {/* STATUS CHOICE */}
-      <ChoiceModal
-        visible={
-          filterChoiceOpen
-        }
-        title="Appointment Status"
-        onClose={() =>
-          setFilterChoiceOpen(false)
-        }
-      >
-        {STATUSES.map((status) => (
-          <ChoiceRow
-            key={status || "all"}
-            text={
-              status
-                ? label(status)
-                : "All"
-            }
-            onPress={() => {
-              setStatusFilter(status);
-              setFilterChoiceOpen(false);
-            }}
-          />
-        ))}
-      </ChoiceModal>
-
-      {/* THERAPIST CHOICE */}
-      <ChoiceModal
-        visible={
-          therapistChoiceOpen
-        }
-        title="Select Therapist"
-        onClose={() =>
-          setTherapistChoiceOpen(
-            false
-          )
-        }
-      >
-        {therapists
-          .filter(
-            (therapist) =>
-              therapist.active !== false
-          )
-          .map((therapist) => (
-            <ChoiceRow
-              key={String(
-                therapist.id
-              )}
-              text={[
-                therapist.name ||
-                  therapist.therapistName ||
-                  "Therapist",
-                therapist.specialization ||
-                  therapist.qualification ||
-                  "",
-              ]
-                .filter(Boolean)
-                .join(" — ")}
-              onPress={() => {
-                setPlan(
-                  (current) => ({
-                    ...current,
-                    therapistId:
-                      String(
-                        therapist.id
-                      ),
-                  })
-                );
-
-                setTherapistChoiceOpen(
-                  false
-                );
-              }}
-            />
-          ))}
-      </ChoiceModal>
-
-      {/* DATE FILTER */}
-      {datePickerOpen && (
-        <DateTimePicker
-          value={
-            dateFilter
-              ? parseDate(dateFilter)
-              : new Date()
-          }
-          mode="date"
-          display={
-            Platform.OS === "android"
-              ? "calendar"
-              : "spinner"
-          }
-          onChange={(
-            event,
-            selectedDate
-          ) => {
-            if (
-              Platform.OS === "android"
-            ) {
-              setDatePickerOpen(
-                false
-              );
-            }
-
-            if (
-              event.type !==
-                "dismissed" &&
-              selectedDate
-            ) {
-              setDateFilter(
-                localDateKey(
-                  selectedDate
-                )
-              );
-            }
-          }}
-        />
-      )}
-
-      {/* TREATMENT DATE PICKER */}
-      {planDatePicker && (
-        <DateTimePicker
-          value={parseDate(
-            planDatePicker === "start"
-              ? plan.startDate
-              : plan.expectedEndDate
-          )}
-          mode="date"
-          minimumDate={startToday()}
-          display={
-            Platform.OS === "android"
-              ? "calendar"
-              : "spinner"
-          }
-          onChange={(
-            event,
-            selectedDate
-          ) => {
-            const field =
-              planDatePicker;
-
-            if (
-              Platform.OS === "android"
-            ) {
-              setPlanDatePicker(null);
-            }
-
-            if (
-              event.type !==
-                "dismissed" &&
-              selectedDate &&
-              field
-            ) {
-              setPlan(
-                (current) => ({
-                  ...current,
-                  [field === "start"
-                    ? "startDate"
-                    : "expectedEndDate"]:
-                    localDateKey(
-                      selectedDate
-                    ),
-                })
-              );
-            }
-          }}
-        />
-      )}
-
-      {/* VIEW PRESCRIPTION */}
-      <BottomSheet
-        visible={Boolean(viewPrescription)}
-        title="Prescription"
-        eyebrow="PATIENT PRESCRIPTION"
-        onClose={() =>
-          setViewPrescription(null)
-        }
-      >
-        {viewPrescription && (
-          <>
-            <View style={styles.viewSummary}>
-              <DetailCard
-                label="Prescription ID"
-                value={`#${viewPrescription.id}`}
-              />
-              <DetailCard
-                label="Status"
-                value={label(
-                  viewPrescription.status || "—"
-                )}
-              />
-            </View>
-
-            <DetailLong
-              label="Diagnosis"
-              value={
-                viewPrescription.diagnosis || "—"
-              }
-            />
-
-            <DetailLong
-              label="Advice"
-              value={
-                viewPrescription.advice || "—"
-              }
-            />
-
-            {Boolean(viewPrescription.notes) && (
-              <DetailLong
-                label="Notes"
-                value={
-                  viewPrescription.notes || "—"
-                }
-              />
-            )}
-
-            <Text style={styles.recordSectionTitle}>
-              Medicines
-            </Text>
-
-            {Array.isArray(
-              viewPrescription.items
-            ) &&
-            viewPrescription.items.length > 0 ? (
-              viewPrescription.items.map(
-                (item, index) => (
-                  <View
-                    key={String(
-                      item.id || index
-                    )}
-                    style={styles.medicineCard}
-                  >
-                    <Text
-                      style={
-                        styles.medicineName
-                      }
-                    >
-                      {item.medicineName ||
-                        "Medicine"}
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.medicineMeta
-                      }
-                    >
-                      Dosage:{" "}
-                      {item.dosage || "—"}
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.medicineMeta
-                      }
-                    >
-                      Frequency:{" "}
-                      {item.frequency || "—"}
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.medicineMeta
-                      }
-                    >
-                      Duration:{" "}
-                      {item.durationDays
-                        ? `${item.durationDays} days`
-                        : "—"}
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.medicineMeta
-                      }
-                    >
-                      Quantity:{" "}
-                      {item.quantity ?? "—"}
-                    </Text>
-
-                    {Boolean(
-                      item.instructions
-                    ) && (
-                      <Text
-                        style={
-                          styles.medicineInstructions
-                        }
-                      >
-                        {
-                          item.instructions
-                        }
-                      </Text>
-                    )}
-                  </View>
-                )
-              )
-            ) : (
-              <Text style={styles.emptyInline}>
-                No medicine items available.
-              </Text>
-            )}
-          </>
-        )}
-      </BottomSheet>
-
-      {/* VIEW TREATMENT PLANS */}
-      <BottomSheet
-        visible={
-          viewTreatmentPlans.length > 0
-        }
-        title="Treatment Plans"
-        eyebrow="PATIENT TREATMENT HISTORY"
-        onClose={() => {
-          setViewTreatmentPlans([]);
-          setViewTreatmentPatientName("");
-        }}
-      >
-        <Text style={styles.viewPatientTitle}>
-          {viewTreatmentPatientName}
-        </Text>
-
-        {viewTreatmentPlans.map(
-          (treatmentPlan, index) => (
-            <View
-              key={String(
-                treatmentPlan.id || index
-              )}
-              style={styles.treatmentViewCard}
-            >
-              <View style={styles.treatmentViewHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={
-                      styles.treatmentViewTitle
-                    }
-                  >
-                    {treatmentPlan.treatmentName ||
-                      "Treatment Plan"}
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.treatmentViewMeta
-                    }
-                  >
-                    {treatmentPlan.therapistName
-                      ? `Therapist: ${treatmentPlan.therapistName}`
-                      : "Therapist not assigned"}
-                  </Text>
-                </View>
-
-                <StatusBadge
-                  text={label(
-                    treatmentPlan.status ||
-                      "PENDING"
-                  )}
-                  kind={statusKind(
-                    treatmentPlan.status ||
-                      "PENDING"
-                  )}
-                />
-              </View>
-
-              <DetailLong
-                label="Diagnosis"
-                value={
-                  treatmentPlan.diagnosis || "—"
-                }
-              />
-
-              <View style={styles.viewSummary}>
-                <DetailCard
-                  label="Sessions"
-                  value={`${treatmentPlan.completedSessions ?? 0}/${treatmentPlan.totalSessions ?? 0}`}
-                />
-
-                <DetailCard
-                  label="Remaining"
-                  value={String(
-                    treatmentPlan.remainingSessions ??
-                      Math.max(
-                        (treatmentPlan.totalSessions || 0) -
-                          (treatmentPlan.completedSessions || 0),
-                        0
-                      )
-                  )}
-                />
-
-                <DetailCard
-                  label="Start Date"
-                  value={formatDate(
-                    treatmentPlan.startDate || ""
-                  )}
-                />
-
-                <DetailCard
-                  label="Expected End"
-                  value={formatDate(
-                    treatmentPlan.expectedEndDate || ""
-                  )}
-                />
-              </View>
-
-              {Boolean(
-                treatmentPlan.instructions
-              ) && (
-                <DetailLong
-                  label="Instructions"
-                  value={
-                    treatmentPlan.instructions || "—"
-                  }
-                />
-              )}
-
-              {Boolean(
-                treatmentPlan.notes
-              ) && (
-                <DetailLong
-                  label="Notes"
-                  value={
-                    treatmentPlan.notes || "—"
-                  }
-                />
-              )}
-            </View>
-          )
-        )}
-      </BottomSheet>
-
-      {/* NOTICE */}
-      <NoticeModal
-        notice={notice}
-        onClose={() =>
-          setNotice((current) => ({
-            ...current,
-            visible: false,
-          }))
-        }
-      />
-
-      {/* LOGOUT */}
-      <LogoutModal
-        visible={logoutOpen}
-        onCancel={() =>
-          setLogoutOpen(false)
-        }
-        onConfirm={logout}
-      />
-    </View>
+    </>
   );
 }
 
-/* =====================================================
-   APPOINTMENT CARD
-===================================================== */
-
-function AppointmentCard({
-  appointment,
-  prescriptionExists,
-  treatmentPlanExists,
-  onView,
-  onComplete,
-  onPrescription,
-  onTreatment,
+function PrescriptionViewModal({
+  prescription,
+  onClose,
 }: {
-  appointment: Appointment;
-  prescriptionExists: boolean;
-  treatmentPlanExists: boolean;
-  onView: () => void;
-  onComplete: () => void;
-  onPrescription: () => void;
-  onTreatment: () => void;
+  prescription: Prescription | null;
+  onClose: () => void;
 }) {
-  const canComplete =
-    [
-      "SUCCESS",
-      "PAID",
-    ].includes(
-      appointment.paymentStatus
-    ) &&
-    appointment.status !==
-      "COMPLETED" &&
-    ![
-      "CANCELLED",
-      "REJECTED",
-    ].includes(
-      appointment.status
-    );
+  if (!prescription) return null;
 
-  const completed =
-    appointment.status ===
-    "COMPLETED";
+  const medicines = Array.isArray(prescription.items)
+    ? prescription.items
+    : [];
 
   return (
-    <View style={styles.card}>
-      <View style={styles.cardTop}>
-        <View
-          style={
-            styles.patientAvatar
-          }
-        >
-          <Text
-            style={
-              styles.patientAvatarText
-            }
-          >
-            {appointment.patientName
-              .charAt(0)
-              .toUpperCase()}
-          </Text>
-        </View>
-
-        <View style={{ flex: 1 }}>
-          <Text
-            style={
-              styles.patientName
-            }
-          >
-            {
-              appointment.patientName
-            }
-          </Text>
-
-          <Text
-            style={
-              styles.patientMeta
-            }
-          >
-            {
-              appointment.phoneNumber
-            }{" "}
-            • #{appointment.id}
-          </Text>
-        </View>
-
-        <StatusBadge
-          text="Offline"
-          kind="success"
-        />
-      </View>
-
-      <View style={styles.timeBox}>
-        <Ionicons
-          name="calendar-outline"
-          size={17}
-          color={GREEN}
-        />
-
-        <View style={{ flex: 1 }}>
-          <Text
-            style={styles.dateText}
-          >
-            {formatDate(
-              appointment.date
-            )}
-          </Text>
-
-          <Text
-            style={styles.timeText}
-          >
-            {formatTime(
-              appointment.startTime
-            )}
-            {appointment.endTime
-              ? ` - ${formatTime(
-                  appointment.endTime
-                )}`
-              : ""}
-          </Text>
-        </View>
-      </View>
-
-      <Text
-        style={
-          styles.symptomLabel
-        }
-      >
-        SYMPTOMS
-      </Text>
-
-      <Text
-        numberOfLines={2}
-        style={styles.symptoms}
-      >
-        {appointment.symptoms}
-      </Text>
-
-      <View style={styles.badges}>
-        <StatusBadge
-          text={label(
-            appointment.status
-          )}
-          kind={statusKind(
-            appointment.status
-          )}
-        />
-
-        <StatusBadge
-          text={`Payment: ${label(
-            appointment.paymentStatus
-          )}`}
-          kind={statusKind(
-            appointment.paymentStatus
-          )}
-        />
-      </View>
-
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={onView}
-        >
-          <Ionicons
-            name="eye-outline"
-            size={17}
-            color={GREEN}
-          />
-          <Text
-            style={
-              styles.actionButtonText
-            }
-          >
-            View
-          </Text>
-        </TouchableOpacity>
-
-        {canComplete && (
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
-              {
-                backgroundColor:
-                  SUCCESS_LIGHT,
-              },
-            ]}
-            onPress={onComplete}
-          >
-            <Ionicons
-              name="checkmark-circle-outline"
-              size={17}
-              color={SUCCESS}
-            />
-            <Text
-              style={[
-                styles.actionButtonText,
-                {
-                  color: SUCCESS,
-                },
-              ]}
-            >
-              Mark Done
-            </Text>
+    <Modal
+      visible
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.prescriptionScreen}>
+        <View style={styles.prescriptionScreenHeader}>
+          <TouchableOpacity style={styles.backButton} onPress={onClose}>
+            <Ionicons name="arrow-back" size={20} color={GREEN} />
           </TouchableOpacity>
-        )}
 
-        {completed && (
-          <View style={styles.clinicalActions}>
-            <TouchableOpacity
-              style={[
-                styles.clinicalActionButton,
-                {
-                  backgroundColor:
-                    "#FFF7DF",
-                },
-              ]}
-              onPress={onPrescription}
-            >
-              <Ionicons
-                name={
-                  prescriptionExists
-                    ? "eye-outline"
-                    : "document-text-outline"
-                }
-                size={17}
-                color={GOLD_DARK}
-              />
-              <Text
-                style={[
-                  styles.clinicalActionText,
-                  { color: GOLD_DARK },
-                ]}
-              >
-                {prescriptionExists
-                  ? "View Prescription"
-                  : "Create Prescription"}
-              </Text>
-            </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.prescriptionScreenEyebrow}>
+              FINALIZED PRESCRIPTION
+            </Text>
+            <Text style={styles.prescriptionScreenTitle}>
+              Prescription #{prescription.id}
+            </Text>
+          </View>
+        </View>
 
-            <TouchableOpacity
-              style={[
-                styles.clinicalActionButton,
-                {
-                  backgroundColor:
-                    INFO_LIGHT,
-                },
-              ]}
-              onPress={onTreatment}
-            >
+        <ScrollView contentContainerStyle={styles.prescriptionScreenBody}>
+          <View style={styles.detailsGrid}>
+            <Detail
+              label="Patient"
+              value={prescription.patientName || "—"}
+            />
+            <Detail
+              label="Finalized"
+              value={
+                prescription.finalizedAt
+                  ? formatDate(String(prescription.finalizedAt).slice(0, 10))
+                  : "—"
+              }
+            />
+            <Detail
+              wide
+              label="Diagnosis"
+              value={prescription.diagnosis || "—"}
+            />
+            <Detail
+              wide
+              label="Advice"
+              value={prescription.advice || "—"}
+            />
+            <Detail
+              wide
+              label="Notes"
+              value={prescription.notes || "—"}
+            />
+          </View>
+
+          <View style={styles.medicineSection}>
+            <View style={styles.medicineHeader}>
+              <Text style={styles.medicineTitle}>Medicines</Text>
+              <View style={styles.medicineCount}>
+                <Text style={styles.medicineCountText}>
+                  {medicines.length} items
+                </Text>
+              </View>
+            </View>
+
+            {medicines.length ? (
+              medicines.map((medicine, index) => (
+                <View
+                  style={styles.medicineCard}
+                  key={String(medicine.id ?? index)}
+                >
+                  <Text style={styles.medicineName}>
+                    {medicine.medicineName ||
+                      medicine.productName ||
+                      "Medicine"}
+                  </Text>
+
+                  <View style={styles.medicineGrid}>
+                    <MedicineValue
+                      label="Dosage"
+                      value={medicine.dosage || "—"}
+                    />
+                    <MedicineValue
+                      label="Frequency"
+                      value={medicine.frequency || "—"}
+                    />
+                    <MedicineValue
+                      label="Days"
+                      value={String(medicine.durationDays ?? "—")}
+                    />
+                    <MedicineValue
+                      label="Quantity"
+                      value={String(medicine.quantity ?? "—")}
+                    />
+                  </View>
+
+                  <View style={styles.instructionBox}>
+                    <Text style={styles.instructionLabel}>INSTRUCTIONS</Text>
+                    <Text style={styles.instructionText}>
+                      {medicine.instructions || "—"}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <View style={styles.empty}>
+                <Text style={styles.emptyTitle}>No medicines were added.</Text>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+function ConfirmCompleteModal({
+  item,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  item: Appointment | null;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal
+      visible={Boolean(item)}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.backdrop} onPress={onClose} />
+
+        {item && (
+          <View style={styles.confirmCard}>
+            <View style={styles.confirmIcon}>
               <Ionicons
-                name={
-                  treatmentPlanExists
-                    ? "eye-outline"
-                    : "medkit-outline"
-                }
-                size={17}
-                color={INFO}
+                name="checkmark-circle-outline"
+                size={30}
+                color={SUCCESS}
               />
-              <Text
-                style={[
-                  styles.clinicalActionText,
-                  { color: INFO },
-                ]}
+            </View>
+
+            <Text style={styles.confirmTitle}>Mark Appointment as Done</Text>
+
+            <PatientHeader item={item} />
+
+            <Text style={styles.confirmText}>
+              The appointment will be marked as Completed. You can then create
+              the prescription or a treatment plan.
+            </Text>
+
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.secondaryAction}
+                onPress={onClose}
+                disabled={busy}
               >
-                {treatmentPlanExists
-                  ? "View Treatment Plans"
-                  : "Create Treatment Plan"}
-              </Text>
-            </TouchableOpacity>
+                <Text style={styles.secondaryActionText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.primaryAction}
+                onPress={onConfirm}
+                disabled={busy}
+              >
+                {busy ? (
+                  <ActivityIndicator size="small" color={WHITE} />
+                ) : (
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={17}
+                    color={WHITE}
+                  />
+                )}
+                <Text style={styles.primaryActionText}>
+                  {busy ? "Completing…" : "Mark as Done"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </View>
-    </View>
+    </Modal>
   );
 }
 
-/* =====================================================
-   REUSABLE UI
-===================================================== */
-
-function BottomSheet({
-  visible,
-  title,
-  eyebrow,
+function TreatmentPlanModal({
+  item,
+  plan,
+  setPlan,
+  therapists,
+  busy,
   onClose,
-  children,
-}: any) {
+  onSubmit,
+  onChooseTherapist,
+  onChooseDate,
+}: {
+  item: Appointment | null;
+  plan: TreatmentPlanForm;
+  setPlan: React.Dispatch<React.SetStateAction<TreatmentPlanForm>>;
+  therapists: Therapist[];
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+  onChooseTherapist: () => void;
+  onChooseDate: (type: "start" | "end") => void;
+}) {
   return (
     <Modal
-      visible={visible}
+      visible={Boolean(item)}
       transparent
       animationType="slide"
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <View
-        style={styles.sheetRoot}
-      >
-        <Pressable
-          style={styles.backdrop}
-          onPress={onClose}
-        />
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.backdrop} onPress={onClose} />
 
-        <View style={styles.sheet}>
-          <View
-            style={styles.handle}
-          />
+        {item && (
+          <View style={styles.planSheet}>
+            <View style={styles.sheetHandle} />
 
-          <View
-            style={
-              styles.sheetHeader
-            }
-          >
-            <View style={{ flex: 1 }}>
-              <Text
-                style={
-                  styles.eyebrow
-                }
-              >
-                {eyebrow}
-              </Text>
+            <View style={styles.detailsHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.detailsTitle}>Create Treatment Plan</Text>
+                <Text style={styles.detailsSub}>THERAPY PLAN</Text>
+              </View>
 
-              <Text
-                style={
-                  styles.sheetTitle
-                }
-              >
-                {title}
-              </Text>
+              <TouchableOpacity style={styles.closeCircle} onPress={onClose}>
+                <Ionicons name="close" size={20} color={GREEN} />
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={onClose}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.planBody}
             >
-              <Ionicons
-                name="close"
-                size={21}
-                color={GREEN}
+              <PatientHeader item={item} />
+
+              <FieldLabel label="Therapist" required />
+              <TouchableOpacity
+                style={styles.inputBox}
+                onPress={onChooseTherapist}
+              >
+                <Ionicons name="person-outline" size={17} color={GOLD_DARK} />
+                <Text
+                  style={[
+                    styles.inputBoxText,
+                    !plan.therapistId && styles.placeholder,
+                  ]}
+                >
+                  {therapistLabel(therapists, plan.therapistId) ||
+                    "Select therapist"}
+                </Text>
+                <Ionicons name="chevron-down" size={16} color={MUTED} />
+              </TouchableOpacity>
+
+              <FieldLabel label="Treatment name" required top />
+              <TextInput
+                value={plan.treatmentName}
+                onChangeText={(value) =>
+                  setPlan((current) => ({
+                    ...current,
+                    treatmentName: value,
+                  }))
+                }
+                placeholder="Enter treatment name"
+                placeholderTextColor="#9AA59E"
+                style={styles.textInput}
               />
+
+              <FieldLabel label="Diagnosis" required top />
+              <TextInput
+                value={plan.diagnosis}
+                onChangeText={(value) =>
+                  setPlan((current) => ({
+                    ...current,
+                    diagnosis: value,
+                  }))
+                }
+                placeholder="Enter diagnosis"
+                placeholderTextColor="#9AA59E"
+                style={styles.textInput}
+              />
+
+              <FieldLabel label="Total sessions" required top />
+              <TextInput
+                value={plan.totalSessions}
+                onChangeText={(value) =>
+                  setPlan((current) => ({
+                    ...current,
+                    totalSessions: value.replace(/[^0-9]/g, ""),
+                  }))
+                }
+                keyboardType="number-pad"
+                placeholder="1 - 365"
+                placeholderTextColor="#9AA59E"
+                style={styles.textInput}
+              />
+
+              <View style={styles.dateRow}>
+                <View style={{ flex: 1 }}>
+                  <FieldLabel label="Start date" required top />
+                  <DateButton
+                    value={plan.startDate}
+                    onPress={() => onChooseDate("start")}
+                  />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <FieldLabel label="Expected end" required top />
+                  <DateButton
+                    value={plan.expectedEndDate}
+                    onPress={() => onChooseDate("end")}
+                  />
+                </View>
+              </View>
+
+              <FieldLabel label="Instructions" top />
+              <TextInput
+                value={plan.instructions}
+                onChangeText={(value) =>
+                  setPlan((current) => ({
+                    ...current,
+                    instructions: value,
+                  }))
+                }
+                multiline
+                textAlignVertical="top"
+                placeholder="Optional instructions"
+                placeholderTextColor="#9AA59E"
+                style={[styles.textInput, styles.textArea]}
+              />
+
+              <FieldLabel label="Clinical notes" top />
+              <TextInput
+                value={plan.notes}
+                onChangeText={(value) =>
+                  setPlan((current) => ({
+                    ...current,
+                    notes: value,
+                  }))
+                }
+                multiline
+                textAlignVertical="top"
+                placeholder="Optional clinical notes"
+                placeholderTextColor="#9AA59E"
+                style={[styles.textInput, styles.textArea]}
+              />
+            </ScrollView>
+
+            <View style={styles.detailsActions}>
+              <TouchableOpacity
+                style={styles.secondaryAction}
+                onPress={onClose}
+                disabled={busy}
+              >
+                <Text style={styles.secondaryActionText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.primaryAction}
+                onPress={onSubmit}
+                disabled={busy}
+              >
+                {busy ? (
+                  <ActivityIndicator size="small" color={WHITE} />
+                ) : (
+                  <Ionicons name="add-outline" size={18} color={WHITE} />
+                )}
+                <Text style={styles.primaryActionText}>
+                  {busy ? "Creating…" : "Create Plan"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
+function TherapistPicker({
+  visible,
+  therapists,
+  selectedId,
+  onClose,
+  onSelect,
+}: {
+  visible: boolean;
+  therapists: Therapist[];
+  selectedId: string;
+  onClose: () => void;
+  onSelect: (id: string | number) => void;
+}) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.backdrop} onPress={onClose} />
+
+        <View style={styles.choiceSheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.detailsHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.detailsTitle}>Select Therapist</Text>
+              <Text style={styles.detailsSub}>ACTIVE THERAPISTS</Text>
+            </View>
+            <TouchableOpacity style={styles.closeCircle} onPress={onClose}>
+              <Ionicons name="close" size={20} color={GREEN} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView
-            showsVerticalScrollIndicator={
-              false
-            }
-            keyboardShouldPersistTaps="handled"
-          >
-            {children}
+          <ScrollView contentContainerStyle={styles.choiceList}>
+            {therapists.length ? (
+              therapists.map((person) => {
+                const active = String(person.id) === String(selectedId);
+
+                return (
+                  <TouchableOpacity
+                    key={String(person.id)}
+                    style={[
+                      styles.choiceRow,
+                      active && styles.choiceRowActive,
+                    ]}
+                    onPress={() => onSelect(person.id)}
+                  >
+                    <View style={styles.choiceAvatar}>
+                      <Ionicons
+                        name="person-outline"
+                        size={18}
+                        color={GREEN}
+                      />
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.choiceName}>
+                        {person.name ||
+                          person.therapistName ||
+                          "Therapist"}
+                      </Text>
+                      {!!person.specialization && (
+                        <Text style={styles.choiceMeta}>
+                          {person.specialization}
+                        </Text>
+                      )}
+                    </View>
+
+                    {active && (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={20}
+                        color={SUCCESS}
+                      />
+                    )}
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={styles.empty}>
+                <Text style={styles.emptyTitle}>No therapists available</Text>
+              </View>
+            )}
           </ScrollView>
         </View>
       </View>
@@ -3389,115 +2136,276 @@ function BottomSheet({
   );
 }
 
-function PatientHeader({
-  appointment,
+function FilterSheet({
+  visible,
+  onClose,
+  date,
+  status,
+  mode,
+  setStatus,
+  setMode,
+  chooseDate,
+  clearDate,
+  reset,
 }: {
-  appointment: Appointment;
+  visible: boolean;
+  onClose: () => void;
+  date: string;
+  status: string;
+  mode: string;
+  setStatus: (value: string) => void;
+  setMode: (value: string) => void;
+  chooseDate: () => void;
+  clearDate: () => void;
+  reset: () => void;
 }) {
   return (
-    <View
-      style={styles.patientHeader}
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={onClose}
     >
-      <View
-        style={
-          styles.patientAvatar
-        }
-      >
-        <Text
-          style={
-            styles.patientAvatarText
-          }
-        >
-          {appointment.patientName
-            .charAt(0)
-            .toUpperCase()}
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.backdrop} onPress={onClose} />
+
+        <View style={styles.filterSheet}>
+          <View style={styles.sheetHandle} />
+
+          <View style={styles.detailsHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.detailsTitle}>Filter Appointments</Text>
+              <Text style={styles.detailsSub}>SEARCH OPTIONS</Text>
+            </View>
+
+            <TouchableOpacity style={styles.closeCircle} onPress={onClose}>
+              <Ionicons name="close" size={20} color={GREEN} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.filterBody}>
+            <FieldLabel label="Date" />
+            <View style={styles.filterDateRow}>
+              <TouchableOpacity
+                style={styles.filterDateButton}
+                onPress={chooseDate}
+              >
+                <Ionicons name="calendar-outline" size={17} color={GREEN} />
+                <Text style={styles.filterDateText}>
+                  {date ? formatDate(date) : "All dates"}
+                </Text>
+              </TouchableOpacity>
+
+              {!!date && (
+                <TouchableOpacity
+                  style={styles.clearDateButton}
+                  onPress={clearDate}
+                >
+                  <Ionicons name="close" size={17} color={DANGER} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <FieldLabel label="Status" top />
+            <View style={styles.optionGrid}>
+              {STATUSES.map((value) => (
+                <OptionChip
+                  key={value || "ALL"}
+                  label={value ? titleCase(value) : "All Statuses"}
+                  active={status === value}
+                  onPress={() => setStatus(value)}
+                />
+              ))}
+            </View>
+
+            <FieldLabel label="Mode" top />
+            <View style={styles.optionGrid}>
+              {MODES.map((value) => (
+                <OptionChip
+                  key={value || "ALL"}
+                  label={value ? titleCase(value) : "All Modes"}
+                  active={mode === value}
+                  onPress={() => setMode(value)}
+                />
+              ))}
+            </View>
+          </ScrollView>
+
+          <View style={styles.detailsActions}>
+            <TouchableOpacity
+              style={styles.secondaryAction}
+              onPress={reset}
+            >
+              <Text style={styles.secondaryActionText}>Reset</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.primaryAction} onPress={onClose}>
+              <Ionicons name="checkmark-outline" size={17} color={WHITE} />
+              <Text style={styles.primaryActionText}>Apply Filters</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function NoticeCard({
+  notice,
+  onClose,
+}: {
+  notice: Notice;
+  onClose: () => void;
+}) {
+  const palette =
+    notice.type === "success"
+      ? { bg: SUCCESS_LIGHT, fg: SUCCESS, icon: "checkmark-circle-outline" }
+      : notice.type === "error"
+      ? { bg: DANGER_LIGHT, fg: DANGER, icon: "alert-circle-outline" }
+      : { bg: INFO_LIGHT, fg: INFO, icon: "information-circle-outline" };
+
+  return (
+    <View style={[styles.notice, { backgroundColor: palette.bg }]}>
+      <Ionicons
+        name={palette.icon as any}
+        size={20}
+        color={palette.fg}
+      />
+
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.noticeTitle, { color: palette.fg }]}>
+          {notice.title}
+        </Text>
+        <Text style={styles.noticeText}>{notice.message}</Text>
+      </View>
+
+      <TouchableOpacity onPress={onClose}>
+        <Ionicons name="close" size={18} color={palette.fg} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function StatCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: number;
+}) {
+  return (
+    <View style={styles.statCard}>
+      <View style={styles.statIcon}>
+        <Ionicons name={icon} size={19} color={GREEN_2} />
+      </View>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={styles.statValue}>{value}</Text>
+    </View>
+  );
+}
+
+function Badge({ value }: { value: string }) {
+  const palette = tone(value);
+
+  return (
+    <View style={[styles.badge, { backgroundColor: palette.backgroundColor }]}>
+      <Text style={[styles.badgeText, { color: palette.color }]}>
+        {titleCase(value)}
+      </Text>
+    </View>
+  );
+}
+
+function InfoItem({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.infoItem}>
+      <Ionicons name={icon} size={15} color={GOLD_DARK} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        <Text style={styles.infoValue} numberOfLines={2}>
+          {value || "—"}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function PatientHeader({ item }: { item: Appointment }) {
+  return (
+    <View style={styles.patientHeader}>
+      <View style={styles.patientAvatar}>
+        <Text style={styles.patientAvatarText}>
+          {item.patientName.charAt(0).toUpperCase()}
         </Text>
       </View>
 
       <View style={{ flex: 1 }}>
-        <Text
-          style={styles.patientName}
-        >
-          {appointment.patientName}
-        </Text>
-
-        <Text
-          style={styles.patientMeta}
-        >
-          {appointment.phoneNumber} ·{" "}
-          {appointment.age} years ·{" "}
-          {label(
-            appointment.gender
-          )}
+        <Text style={styles.patientHeaderName}>{item.patientName}</Text>
+        <Text style={styles.patientHeaderMeta}>
+          {item.phoneNumber} · {item.age} years · {titleCase(item.gender)}
         </Text>
       </View>
     </View>
   );
 }
 
-function DetailCard({
-  label: title,
+function Detail({
+  label,
+  value,
+  wide = false,
+}: {
+  label: string;
+  value: any;
+  wide?: boolean;
+}) {
+  return (
+    <View style={[styles.detailBox, wide && styles.detailWide]}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue}>{value || "—"}</Text>
+    </View>
+  );
+}
+
+function MedicineValue({
+  label,
   value,
 }: {
   label: string;
   value: string;
 }) {
   return (
-    <View style={styles.detailCard}>
-      <Text
-        style={styles.detailLabel}
-      >
-        {title}
-      </Text>
-
-      <Text
-        style={styles.detailValue}
-      >
-        {value || "—"}
-      </Text>
+    <View style={styles.medicineValue}>
+      <Text style={styles.medicineValueLabel}>{label}</Text>
+      <Text style={styles.medicineValueText}>{value}</Text>
     </View>
   );
 }
 
-function DetailLong({
-  label: title,
-  value,
+function FieldLabel({
+  label,
+  required = false,
+  top = false,
 }: {
   label: string;
-  value: string;
+  required?: boolean;
+  top?: boolean;
 }) {
   return (
-    <View style={styles.detailLong}>
-      <Text
-        style={styles.detailLabel}
-      >
-        {title}
-      </Text>
-
-      <Text
-        style={
-          styles.detailParagraph
-        }
-      >
-        {value || "—"}
-      </Text>
-    </View>
-  );
-}
-
-function Field({
-  label: title,
-  children,
-}: any) {
-  return (
-    <View>
-      <Text
-        style={styles.fieldLabel}
-      >
-        {title}
-      </Text>
-      {children}
-    </View>
+    <Text style={[styles.fieldLabel, top && styles.fieldLabelTop]}>
+      {label}
+      {required && <Text style={{ color: DANGER }}> *</Text>}
+    </Text>
   );
 }
 
@@ -3509,2009 +2417,1150 @@ function DateButton({
   onPress: () => void;
 }) {
   return (
+    <TouchableOpacity style={styles.dateButton} onPress={onPress}>
+      <Ionicons name="calendar-outline" size={16} color={GREEN} />
+      <Text style={[styles.dateButtonText, !value && styles.placeholder]}>
+        {value ? formatDate(value) : "Select date"}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+function OptionChip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
     <TouchableOpacity
-      style={styles.inputBox}
+      style={[styles.optionChip, active && styles.optionChipActive]}
       onPress={onPress}
     >
-      <Ionicons
-        name="calendar-outline"
-        size={17}
-        color={GOLD_DARK}
-      />
-
       <Text
-        numberOfLines={1}
-        style={styles.inputBoxText}
+        style={[styles.optionChipText, active && styles.optionChipTextActive]}
       >
-        {formatDate(value)}
+        {label}
       </Text>
     </TouchableOpacity>
   );
 }
 
 function FilterChip({
-  icon,
-  text,
-  active,
-  onPress,
-}: any) {
+  label,
+  onRemove,
+}: {
+  label: string;
+  onRemove: () => void;
+}) {
   return (
-    <TouchableOpacity
-      style={[
-        styles.filterChip,
-        active &&
-          styles.filterChipActive,
-      ]}
-      onPress={onPress}
-    >
-      <Ionicons
-        name={icon}
-        size={15}
-        color={
-          active
-            ? WHITE
-            : GREEN
-        }
-      />
-
-      <Text
-        style={[
-          styles.filterChipText,
-          active && {
-            color: WHITE,
-          },
-        ]}
-      >
-        {text}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-function StatusBadge({
-  text,
-  kind,
-}: any) {
-  let backgroundColor =
-    "#F1F3F1";
-  let color = MUTED;
-
-  if (kind === "success") {
-    backgroundColor =
-      SUCCESS_LIGHT;
-    color = SUCCESS;
-  } else if (
-    kind === "danger"
-  ) {
-    backgroundColor =
-      DANGER_LIGHT;
-    color = DANGER;
-  } else if (
-    kind === "warning"
-  ) {
-    backgroundColor =
-      WARNING_LIGHT;
-    color = WARNING;
-  } else if (kind === "info") {
-    backgroundColor =
-      INFO_LIGHT;
-    color = INFO;
-  }
-
-  return (
-    <View
-      style={[
-        styles.badge,
-        { backgroundColor },
-      ]}
-    >
-      <Text
-        style={[
-          styles.badgeText,
-          { color },
-        ]}
-      >
-        {text}
-      </Text>
+    <View style={styles.filterChip}>
+      <Text style={styles.filterChipText}>{label}</Text>
+      <TouchableOpacity onPress={onRemove}>
+        <Ionicons name="close" size={14} color={GREEN} />
+      </TouchableOpacity>
     </View>
   );
 }
 
-function EmptyState() {
-  return (
-    <View style={styles.empty}>
-      <View
-        style={styles.emptyIcon}
-      >
-        <Ionicons
-          name="calendar-outline"
-          size={29}
-          color={GREEN}
-        />
-      </View>
+function therapistLabel(therapists: Therapist[], id: string) {
+  if (!id) return "";
 
-      <Text
-        style={styles.emptyTitle}
-      >
-        No appointments found
-      </Text>
-
-      <Text
-        style={styles.emptyText}
-      >
-        Try changing the search or
-        filter options.
-      </Text>
-    </View>
+  const therapist = therapists.find(
+    (item) => String(item.id) === String(id)
   );
+
+  if (!therapist) return "";
+
+  return `${therapist.name || therapist.therapistName || "Therapist"}${
+    therapist.specialization ? ` — ${therapist.specialization}` : ""
+  }`;
 }
 
-function ChoiceModal({
-  visible,
-  title,
-  onClose,
-  children,
-}: any) {
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={onClose}
-    >
-      <View style={styles.center}>
-        <Pressable
-          style={styles.backdrop}
-          onPress={onClose}
-        />
-
-        <View style={styles.choiceCard}>
-          <Text
-            style={styles.modalTitle}
-          >
-            {title}
-          </Text>
-
-          <ScrollView>
-            {children}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-function ChoiceRow({
-  text,
-  onPress,
-}: {
-  text: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={styles.choiceRow}
-      onPress={onPress}
-    >
-      <Text
-        style={styles.choiceText}
-      >
-        {text}
-      </Text>
-
-      <Ionicons
-        name="chevron-forward"
-        size={16}
-        color={GOLD_DARK}
-      />
-    </TouchableOpacity>
-  );
-}
-
-/* =====================================================
-   MODALS
-===================================================== */
-
-function ConfirmCompleteModal({
-  appointment,
-  busy,
-  onCancel,
-  onConfirm,
-}: {
-  appointment: Appointment | null;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <Modal
-      visible={Boolean(
-        appointment
-      )}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={onCancel}
-    >
-      <View style={styles.center}>
-        <Pressable
-          style={styles.backdrop}
-          onPress={onCancel}
-        />
-
-        {appointment && (
-          <View
-            style={styles.modalCard}
-          >
-            <View
-              style={styles.modalIcon}
-            >
-              <Ionicons
-                name="checkmark-circle-outline"
-                size={31}
-                color={SUCCESS}
-              />
-            </View>
-
-            <Text
-              style={styles.eyebrow}
-            >
-              CLINICAL WORKFLOW
-            </Text>
-
-            <Text
-              style={styles.modalTitle}
-            >
-              Mark Appointment as Done
-            </Text>
-
-            <PatientHeader
-              appointment={
-                appointment
-              }
-            />
-
-            <View
-              style={
-                styles.completeNote
-              }
-            >
-              <Text
-                style={
-                  styles.completeNoteText
-                }
-              >
-                The appointment will be
-                marked as COMPLETED.
-                After that, create the
-                prescription and a
-                treatment plan only when
-                clinically required.
-              </Text>
-            </View>
-
-            <View
-              style={
-                styles.sheetActions
-              }
-            >
-              <TouchableOpacity
-                style={
-                  styles.secondaryButton
-                }
-                onPress={onCancel}
-              >
-                <Text
-                  style={
-                    styles.secondaryButtonText
-                  }
-                >
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                disabled={busy}
-                style={
-                  styles.primaryButton
-                }
-                onPress={onConfirm}
-              >
-                {busy ? (
-                  <ActivityIndicator
-                    color={WHITE}
-                  />
-                ) : (
-                  <>
-                    <Ionicons
-                      name="checkmark-circle-outline"
-                      size={17}
-                      color={WHITE}
-                    />
-
-                    <Text
-                      style={
-                        styles.primaryButtonText
-                      }
-                    >
-                      Mark Done
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-      </View>
-    </Modal>
-  );
-}
-
-function WorkflowModal({
-  appointment,
-  onClose,
-  onPrescription,
-  onTreatment,
-}: {
-  appointment: Appointment | null;
-  onClose: () => void;
-  onPrescription: () => void;
-  onTreatment: () => void;
-}) {
-  return (
-    <Modal
-      visible={Boolean(
-        appointment
-      )}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={onClose}
-    >
-      <View style={styles.center}>
-        <Pressable
-          style={styles.backdrop}
-          onPress={onClose}
-        />
-
-        {appointment && (
-          <View
-            style={styles.modalCard}
-          >
-            <View
-              style={styles.modalIcon}
-            >
-              <Ionicons
-                name="checkmark-done-outline"
-                size={31}
-                color={SUCCESS}
-              />
-            </View>
-
-            <Text
-              style={styles.eyebrow}
-            >
-              APPOINTMENT COMPLETED
-            </Text>
-
-            <Text
-              style={styles.modalTitle}
-            >
-              Select Next Action
-            </Text>
-
-            <Text
-              style={styles.modalText}
-            >
-              Continue the patient's
-              clinical workflow now, or
-              complete it later.
-            </Text>
-
-            <TouchableOpacity
-              style={
-                styles.workflowOption
-              }
-              onPress={
-                onPrescription
-              }
-            >
-              <View
-                style={[
-                  styles.workflowIcon,
-                  {
-                    backgroundColor:
-                      INFO_LIGHT,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name="document-text-outline"
-                  size={22}
-                  color={INFO}
-                />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={
-                    styles.workflowTitle
-                  }
-                >
-                  Create Prescription
-                </Text>
-
-                <Text
-                  style={
-                    styles.workflowText
-                  }
-                >
-                  Enter diagnosis, advice
-                  and prescribed medicines.
-                </Text>
-              </View>
-
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={MUTED}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={
-                styles.workflowOption
-              }
-              onPress={onTreatment}
-            >
-              <View
-                style={[
-                  styles.workflowIcon,
-                  {
-                    backgroundColor:
-                      "#FFF7DF",
-                  },
-                ]}
-              >
-                <Ionicons
-                  name="medkit-outline"
-                  size={22}
-                  color={GOLD_DARK}
-                />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={
-                    styles.workflowTitle
-                  }
-                >
-                  Create Treatment Plan
-                </Text>
-
-                <Text
-                  style={
-                    styles.workflowText
-                  }
-                >
-                  Assign a therapist when
-                  therapy is required.
-                </Text>
-              </View>
-
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={MUTED}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.secondaryButton,
-                {
-                  marginTop: 12,
-                  width: "100%",
-                },
-              ]}
-              onPress={onClose}
-            >
-              <Text
-                style={
-                  styles.secondaryButtonText
-                }
-              >
-                Do Later
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-    </Modal>
-  );
-}
-
-function NoticeModal({
-  notice,
-  onClose,
-}: {
-  notice: Notice;
-  onClose: () => void;
-}) {
-  const success =
-    notice.type === "success";
-  const error =
-    notice.type === "error";
-
-  return (
-    <Modal
-      visible={notice.visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={onClose}
-    >
-      <View style={styles.center}>
-        <Pressable
-          style={styles.backdrop}
-          onPress={onClose}
-        />
-
-        <View
-          style={styles.modalCard}
-        >
-          <View
-            style={[
-              styles.modalIcon,
-              {
-                backgroundColor: success
-                  ? SUCCESS_LIGHT
-                  : error
-                  ? DANGER_LIGHT
-                  : INFO_LIGHT,
-              },
-            ]}
-          >
-            <Ionicons
-              name={
-                success
-                  ? "checkmark-circle-outline"
-                  : error
-                  ? "close-circle-outline"
-                  : "information-circle-outline"
-              }
-              size={32}
-              color={
-                success
-                  ? SUCCESS
-                  : error
-                  ? DANGER
-                  : INFO
-              }
-            />
-          </View>
-
-          <Text
-            style={styles.eyebrow}
-          >
-            NEOLIFE DOCTOR PORTAL
-          </Text>
-
-          <Text
-            style={styles.modalTitle}
-          >
-            {notice.title}
-          </Text>
-
-          <Text
-            style={styles.modalText}
-          >
-            {notice.message}
-          </Text>
-
-          <TouchableOpacity
-            style={[
-              styles.primaryButton,
-              {
-                width: "100%",
-                marginTop: 18,
-                backgroundColor: GOLD,
-              },
-            ]}
-            onPress={onClose}
-          >
-            <Text
-              style={[
-                styles.primaryButtonText,
-                { color: GREEN },
-              ]}
-            >
-              Okay
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-function LogoutModal({
-  visible,
-  onCancel,
-  onConfirm,
-}: {
-  visible: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={onCancel}
-    >
-      <View style={styles.center}>
-        <Pressable
-          style={styles.backdrop}
-          onPress={onCancel}
-        />
-
-        <View
-          style={styles.modalCard}
-        >
-          <View
-            style={styles.modalIcon}
-          >
-            <Ionicons
-              name="log-out-outline"
-              size={30}
-              color={GREEN}
-            />
-          </View>
-
-          <Text
-            style={styles.eyebrow}
-          >
-            NEOLIFE DOCTOR PORTAL
-          </Text>
-
-          <Text
-            style={styles.modalTitle}
-          >
-            Log Out?
-          </Text>
-
-          <Text
-            style={styles.modalText}
-          >
-            Are you sure you want to
-            leave your doctor workspace?
-          </Text>
-
-          <View
-            style={
-              styles.sheetActions
-            }
-          >
-            <TouchableOpacity
-              style={
-                styles.secondaryButton
-              }
-              onPress={onCancel}
-            >
-              <Text
-                style={
-                  styles.secondaryButtonText
-                }
-              >
-                Cancel
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={
-                styles.primaryButton
-              }
-              onPress={onConfirm}
-            >
-              <Text
-                style={
-                  styles.primaryButtonText
-                }
-              >
-                Log Out
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-/* =====================================================
-   HELPERS
-===================================================== */
-
-function label(value: string) {
-  return String(value || "")
-    .replace(/_/g, " ")
-    .toLowerCase()
-    .replace(
-      /\b\w/g,
-      (character) =>
-        character.toUpperCase()
-    );
-}
-
-function statusKind(value: string) {
-  const status = String(
-    value || ""
-  ).toUpperCase();
-
-  if (
-    [
-      "COMPLETED",
-      "CONFIRMED",
-      "PAID",
-      "SUCCESS",
-    ].includes(status)
-  ) {
-    return "success";
-  }
-
-  if (
-    [
-      "PENDING",
-      "PAYMENT_PENDING",
-      "RESCHEDULED",
-    ].includes(status)
-  ) {
-    return "warning";
-  }
-
-  if (
-    [
-      "CANCELLED",
-      "REJECTED",
-      "FAILED",
-    ].includes(status)
-  ) {
-    return "danger";
-  }
-
-  return "muted";
-}
-
-function formatDate(value: string) {
-  if (!value) {
-    return "—";
-  }
-
-  const parts = value
-    .slice(0, 10)
-    .split("-")
-    .map(Number);
-
-  if (parts.length !== 3) {
-    return value;
-  }
-
-  return new Date(
-    parts[0],
-    parts[1] - 1,
-    parts[2]
-  ).toLocaleDateString(
-    "en-IN",
-    {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }
-  );
-}
-
-function formatTime(value: string) {
-  if (!value) {
-    return "—";
-  }
-
-  const [hourText, minuteText] =
-    String(value).split(":");
-
-  let hour = Number(hourText);
-  const suffix =
-    hour >= 12 ? "PM" : "AM";
-
-  hour = hour % 12 || 12;
-
-  return `${hour}:${
-    minuteText || "00"
-  } ${suffix}`;
-}
-
-function localDateKey(date: Date) {
-  return `${date.getFullYear()}-${String(
-    date.getMonth() + 1
-  ).padStart(2, "0")}-${String(
-    date.getDate()
-  ).padStart(2, "0")}`;
-}
-
-function parseDate(value: string) {
-  if (!value) {
-    return new Date();
-  }
-
-  const parts = value
-    .split("-")
-    .map(Number);
-
-  return new Date(
-    parts[0],
-    parts[1] - 1,
-    parts[2]
-  );
-}
-
-function startToday() {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  return date;
-}
-
-function therapistLabel(
-  therapists: Therapist[],
-  id: string
-) {
-  const therapist =
-    therapists.find(
-      (item) =>
-        String(item.id) ===
-        String(id)
-    );
-
-  if (!therapist) {
-    return "";
-  }
-
-  return [
-    therapist.name ||
-      therapist.therapistName ||
-      "Therapist",
-    therapist.specialization ||
-      therapist.qualification ||
-      "",
-  ]
-    .filter(Boolean)
-    .join(" — ");
-}
-
-/* =====================================================
-   STYLES
-===================================================== */
-
-const styles =
-  StyleSheet.create({
-    screen: {
-      flex: 1,
-      backgroundColor: CREAM,
-    },
-
-    loader: {
-      flex: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: CREAM,
-    },
-
-    loaderText: {
-      marginTop: 10,
-      fontFamily:
-        "DMSans_500Medium",
-      fontSize: 11,
-      color: MUTED,
-    },
-
-    header: {
-      minHeight: 75,
-      paddingTop:
-        Platform.OS === "web"
-          ? 12
-          : 43,
-      paddingBottom: 11,
-      paddingHorizontal: 14,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 9,
-      backgroundColor: WHITE,
-      borderBottomWidth: 1,
-      borderBottomColor: BORDER,
-    },
-
-    headerButton: {
-      width: 43,
-      height: 43,
-      borderRadius: 15,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: MINT,
-    },
-
-    eyebrow: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 7,
-      color: GOLD_DARK,
-      letterSpacing: 1,
-    },
-
-    headerTitle: {
-      marginTop: 2,
-      fontFamily:
-        "PlayfairDisplay_700Bold",
-      fontSize: 18,
-      color: GREEN,
-    },
-
-    avatar: {
-      width: 43,
-      height: 43,
-      borderRadius: 15,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: GREEN,
-    },
-
-    avatarText: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 17,
-      color: WHITE,
-    },
-
-    hero: {
-      margin: 15,
-      marginBottom: 0,
-      padding: 22,
-      borderRadius: 28,
-      overflow: "hidden",
-      backgroundColor: GREEN,
-    },
-
-    heroOrb: {
-      position: "absolute",
-      width: 180,
-      height: 180,
-      borderRadius: 90,
-      right: -60,
-      top: -95,
-      backgroundColor:
-        "rgba(255,255,255,.06)",
-    },
-
-    heroIcon: {
-      width: 48,
-      height: 48,
-      borderRadius: 15,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor:
-        "rgba(255,255,255,.09)",
-    },
-
-    heroTag: {
-      marginTop: 14,
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 7,
-      color: GOLD_LIGHT,
-      letterSpacing: 1.1,
-    },
-
-    heroTitle: {
-      marginTop: 5,
-      fontFamily:
-        "PlayfairDisplay_700Bold",
-      fontSize: 27,
-      color: WHITE,
-    },
-
-    heroText: {
-      marginTop: 7,
-      fontFamily:
-        "DMSans_400Regular",
-      fontSize: 9,
-      lineHeight: 15,
-      color: "#D3E1D8",
-    },
-
-    stats: {
-      paddingHorizontal: 15,
-      paddingTop: 13,
-      gap: 8,
-    },
-
-    statCard: {
-      width: 105,
-      minHeight: 105,
-      padding: 11,
-      borderRadius: 18,
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    statIcon: {
-      width: 34,
-      height: 34,
-      borderRadius: 11,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: MINT,
-    },
-
-    statValue: {
-      marginTop: 7,
-      fontFamily:
-        "PlayfairDisplay_700Bold",
-      fontSize: 18,
-      color: GREEN,
-    },
-
-    statLabel: {
-      fontFamily:
-        "DMSans_500Medium",
-      fontSize: 7,
-      color: MUTED,
-    },
-
-    filters: {
-      margin: 15,
-      marginBottom: 0,
-      padding: 12,
-      borderRadius: 19,
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    searchBox: {
-      height: 49,
-      paddingHorizontal: 12,
-      borderRadius: 14,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-      backgroundColor: CREAM,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    searchInput: {
-      flex: 1,
-      fontFamily:
-        "DMSans_500Medium",
-      fontSize: 9,
-      color: TEXT,
-    },
-
-    filterRow: {
-      paddingTop: 9,
-      gap: 7,
-    },
-
-    filterChip: {
-      height: 38,
-      paddingHorizontal: 11,
-      borderRadius: 12,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 5,
-      backgroundColor: MINT,
-    },
-
-    filterChipActive: {
-      backgroundColor: GREEN,
-    },
-
-    filterChipText: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 7.5,
-      color: GREEN,
-    },
-
-    sectionHeader: {
-      margin: 15,
-      marginTop: 22,
-      marginBottom: 9,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent:
-        "space-between",
-    },
-
-    sectionTitle: {
-      marginTop: 3,
-      fontFamily:
-        "PlayfairDisplay_700Bold",
-      fontSize: 21,
-      color: GREEN,
-    },
-
-    countBadge: {
-      paddingHorizontal: 10,
-      paddingVertical: 7,
-      borderRadius: 20,
-      backgroundColor: MINT,
-    },
-
-    countText: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 7,
-      color: GREEN,
-    },
-
-    cards: {
-      marginHorizontal: 15,
-      gap: 10,
-    },
-
-    card: {
-      padding: 14,
-      borderRadius: 20,
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    cardTop: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 9,
-    },
-
-    patientAvatar: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: GREEN,
-    },
-
-    patientAvatarText: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 16,
-      color: WHITE,
-    },
-
-    patientName: {
-      fontFamily:
-        "PlayfairDisplay_700Bold",
-      fontSize: 15,
-      color: GREEN,
-    },
-
-    patientMeta: {
-      marginTop: 2,
-      fontFamily:
-        "DMSans_400Regular",
-      fontSize: 7,
-      color: MUTED,
-    },
-
-    timeBox: {
-      marginTop: 11,
-      padding: 10,
-      borderRadius: 13,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-      backgroundColor: MINT,
-    },
-
-    dateText: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 8.5,
-      color: GREEN,
-    },
-
-    timeText: {
-      marginTop: 2,
-      fontFamily:
-        "DMSans_400Regular",
-      fontSize: 7,
-      color: MUTED,
-    },
-
-    symptomLabel: {
-      marginTop: 11,
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 6.5,
-      color: GOLD_DARK,
-      letterSpacing: 0.8,
-    },
-
-    symptoms: {
-      marginTop: 3,
-      fontFamily:
-        "DMSans_400Regular",
-      fontSize: 8,
-      lineHeight: 13,
-      color: MUTED,
-    },
-
-    badges: {
-      marginTop: 10,
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: 5,
-    },
-
-    badge: {
-      paddingHorizontal: 8,
-      paddingVertical: 5,
-      borderRadius: 20,
-    },
-
-    badgeText: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 6.3,
-    },
-
-    actions: {
-      marginTop: 11,
-      paddingTop: 10,
-      borderTopWidth: 1,
-      borderTopColor: BORDER,
-      flexDirection: "row",
-      gap: 7,
-    },
-
-    actionButton: {
-      minHeight: 38,
-      paddingHorizontal: 11,
-      borderRadius: 11,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 5,
-      backgroundColor: MINT,
-    },
-
-    actionButtonText: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 7.5,
-      color: GREEN,
-    },
-
-    iconAction: {
-      width: 40,
-      height: 38,
-      borderRadius: 11,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-
-    clinicalActions: {
-      width: "100%",
-      marginTop: 8,
-      gap: 7,
-    },
-
-    clinicalActionButton: {
-      minHeight: 42,
-      paddingHorizontal: 12,
-      borderRadius: 12,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 6,
-    },
-
-    clinicalActionText: {
-      fontFamily: "DMSans_700Bold",
-      fontSize: 8,
-    },
-
-    viewSummary: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: 8,
-      marginBottom: 8,
-    },
-
-    recordSectionTitle: {
-      marginTop: 16,
-      marginBottom: 8,
-      fontFamily: "PlayfairDisplay_700Bold",
-      fontSize: 18,
-      color: GREEN,
-    },
-
-    medicineCard: {
-      marginBottom: 9,
-      padding: 12,
-      borderRadius: 14,
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    medicineName: {
-      fontFamily: "DMSans_700Bold",
-      fontSize: 10,
-      color: GREEN,
-      marginBottom: 5,
-    },
-
-    medicineMeta: {
-      marginTop: 2,
-      fontFamily: "DMSans_400Regular",
-      fontSize: 8,
-      color: MUTED,
-    },
-
-    medicineInstructions: {
-      marginTop: 7,
-      padding: 8,
-      borderRadius: 9,
-      backgroundColor: MINT,
-      fontFamily: "DMSans_400Regular",
-      fontSize: 8,
-      lineHeight: 13,
-      color: TEXT,
-    },
-
-    emptyInline: {
-      paddingVertical: 12,
-      fontFamily: "DMSans_400Regular",
-      fontSize: 9,
-      color: MUTED,
-      textAlign: "center",
-    },
-
-    viewPatientTitle: {
-      marginBottom: 12,
-      fontFamily: "PlayfairDisplay_700Bold",
-      fontSize: 18,
-      color: GREEN,
-    },
-
-    treatmentViewCard: {
-      marginBottom: 12,
-      padding: 13,
-      borderRadius: 16,
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    treatmentViewHeader: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-      marginBottom: 6,
-    },
-
-    treatmentViewTitle: {
-      fontFamily: "DMSans_700Bold",
-      fontSize: 11,
-      color: GREEN,
-    },
-
-    treatmentViewMeta: {
-      marginTop: 3,
-      fontFamily: "DMSans_400Regular",
-      fontSize: 8,
-      color: MUTED,
-    },
-
-    pagination: {
-      margin: 15,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 14,
-    },
-
-    pageButton: {
-      width: 42,
-      height: 42,
-      borderRadius: 13,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    pageInfo: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 8,
-      color: MUTED,
-    },
-
-    empty: {
-      minHeight: 190,
-      padding: 22,
-      borderRadius: 20,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    emptyIcon: {
-      width: 57,
-      height: 57,
-      borderRadius: 18,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: MINT,
-    },
-
-    emptyTitle: {
-      marginTop: 10,
-      fontFamily:
-        "PlayfairDisplay_700Bold",
-      fontSize: 17,
-      color: GREEN,
-    },
-
-    emptyText: {
-      marginTop: 4,
-      fontFamily:
-        "DMSans_400Regular",
-      fontSize: 8,
-      color: MUTED,
-    },
-
-    backdrop: {
-      ...StyleSheet.absoluteFillObject,
-      backgroundColor:
-        "rgba(5,28,19,.72)",
-    },
-
-    drawerRoot: {
-      flex: 1,
-      flexDirection: "row",
-    },
-
-    drawer: {
-      width: "86%",
-      maxWidth: 350,
-      height: "100%",
-      paddingTop:
-        Platform.OS === "web"
-          ? 35
-          : 58,
-      paddingHorizontal: 15,
-      paddingBottom: 20,
-      backgroundColor: GREEN,
-    },
-
-    drawerBrand: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-    },
-
-    brandIcon: {
-      width: 48,
-      height: 48,
-      borderRadius: 16,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor:
-        "rgba(255,255,255,.10)",
-    },
-
-    brandTitle: {
-      fontFamily:
-        "PlayfairDisplay_700Bold",
-      fontSize: 24,
-      color: WHITE,
-    },
-
-    brandSub: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 8,
-      color: GOLD_LIGHT,
-      letterSpacing: 1,
-    },
-
-    drawerClose: {
-      width: 40,
-      height: 40,
-      borderRadius: 13,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: WHITE,
-    },
-
-    drawerDoctor: {
-      marginTop: 18,
-      marginBottom: 8,
-      padding: 11,
-      borderRadius: 17,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 9,
-      backgroundColor:
-        "rgba(255,255,255,.08)",
-      borderWidth: 1,
-      borderColor:
-        "rgba(255,255,255,.10)",
-    },
-
-    drawerAvatar: {
-      width: 43,
-      height: 43,
-      borderRadius: 14,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: GOLD,
-    },
-
-    drawerAvatarText: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 16,
-      color: GREEN,
-    },
-
-    drawerName: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 11,
-      color: WHITE,
-    },
-
-    drawerRole: {
-      marginTop: 2,
-      fontFamily:
-        "DMSans_400Regular",
-      fontSize: 7.5,
-      color: "#C5D7CC",
-    },
-
-    menuLabel: {
-      marginLeft: 11,
-      marginBottom: 6,
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 7,
-      color: "#7E9C8C",
-      letterSpacing: 1.2,
-    },
-
-    menuItem: {
-      minHeight: 50,
-      paddingHorizontal: 9,
-      borderRadius: 14,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 9,
-    },
-
-    menuActive: {
-      backgroundColor: WHITE,
-    },
-
-    menuIcon: {
-      width: 34,
-      height: 34,
-      borderRadius: 11,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor:
-        "rgba(255,255,255,.07)",
-    },
-
-    menuText: {
-      flex: 1,
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 10.5,
-      color: "#E4ECE7",
-    },
-
-    logout: {
-      minHeight: 49,
-      borderRadius: 15,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      backgroundColor:
-        "rgba(255,255,255,.10)",
-      borderWidth: 1,
-      borderColor:
-        "rgba(255,255,255,.16)",
-    },
-
-    logoutText: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 11,
-      color: WHITE,
-    },
-
-    sheetRoot: {
-      flex: 1,
-      justifyContent: "flex-end",
-    },
-
-    sheet: {
-      maxHeight: "92%",
-      paddingTop: 10,
-      paddingHorizontal: 18,
-      paddingBottom:
-        Platform.OS === "ios"
-          ? 30
-          : 20,
-      borderTopLeftRadius: 30,
-      borderTopRightRadius: 30,
-      backgroundColor: CREAM,
-    },
-
-    handle: {
-      alignSelf: "center",
-      width: 44,
-      height: 5,
-      borderRadius: 3,
-      backgroundColor: "#CDD4CF",
-    },
-
-    sheetHeader: {
-      marginTop: 14,
-      marginBottom: 10,
-      flexDirection: "row",
-      alignItems: "center",
-    },
-
-    sheetTitle: {
-      marginTop: 3,
-      fontFamily:
-        "PlayfairDisplay_700Bold",
-      fontSize: 24,
-      color: GREEN,
-    },
-
-    closeButton: {
-      width: 39,
-      height: 39,
-      borderRadius: 13,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: MINT,
-    },
-
-    patientHeader: {
-      marginVertical: 8,
-      padding: 12,
-      borderRadius: 16,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 9,
-      backgroundColor: MINT,
-    },
-
-    detailGrid: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: 8,
-    },
-
-    detailCard: {
-      width: "48.5%",
-      padding: 11,
-      borderRadius: 13,
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    detailLong: {
-      marginTop: 8,
-      padding: 12,
-      borderRadius: 13,
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    detailLabel: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 6.5,
-      color: MUTED,
-      letterSpacing: 0.6,
-    },
-
-    detailValue: {
-      marginTop: 5,
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 8.5,
-      color: GREEN,
-    },
-
-    detailParagraph: {
-      marginTop: 5,
-      fontFamily:
-        "DMSans_400Regular",
-      fontSize: 8,
-      lineHeight: 13,
-      color: TEXT,
-    },
-
-    sheetActions: {
-      marginTop: 17,
-      flexDirection: "row",
-      gap: 8,
-    },
-
-    secondaryButton: {
-      flex: 1,
-      minHeight: 48,
-      borderRadius: 14,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 6,
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    secondaryButtonText: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 8.5,
-      color: GREEN,
-    },
-
-    primaryButton: {
-      flex: 1,
-      minHeight: 48,
-      borderRadius: 14,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 6,
-      backgroundColor: GREEN,
-    },
-
-    primaryButtonText: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 8.5,
-      color: WHITE,
-    },
-
-    center: {
-      flex: 1,
-      paddingHorizontal: 20,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-
-    modalCard: {
-      width: "100%",
-      maxWidth: 390,
-      padding: 21,
-      borderRadius: 28,
-      alignItems: "center",
-      backgroundColor: CREAM,
-      borderWidth: 1,
-      borderColor:
-        "rgba(214,180,91,.42)",
-      elevation: 18,
-    },
-
-    modalIcon: {
-      width: 65,
-      height: 65,
-      borderRadius: 21,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: MINT,
-    },
-
-    modalTitle: {
-      marginTop: 6,
-      fontFamily:
-        "PlayfairDisplay_700Bold",
-      fontSize: 22,
-      color: GREEN,
-      textAlign: "center",
-    },
-
-    modalText: {
-      marginTop: 8,
-      fontFamily:
-        "DMSans_400Regular",
-      fontSize: 9,
-      lineHeight: 15,
-      color: MUTED,
-      textAlign: "center",
-    },
-
-    completeNote: {
-      marginTop: 9,
-      padding: 12,
-      borderRadius: 13,
-      backgroundColor:
-        SUCCESS_LIGHT,
-    },
-
-    completeNoteText: {
-      fontFamily:
-        "DMSans_400Regular",
-      fontSize: 8,
-      lineHeight: 14,
-      color: SUCCESS,
-    },
-
-    workflowOption: {
-      width: "100%",
-      marginTop: 10,
-      padding: 12,
-      borderRadius: 15,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    workflowIcon: {
-      width: 45,
-      height: 45,
-      borderRadius: 14,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-
-    workflowTitle: {
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 9,
-      color: GREEN,
-    },
-
-    workflowText: {
-      marginTop: 3,
-      fontFamily:
-        "DMSans_400Regular",
-      fontSize: 7,
-      lineHeight: 12,
-      color: MUTED,
-    },
-
-    fieldLabel: {
-      marginTop: 11,
-      marginBottom: 6,
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 7,
-      color: GREEN,
-      letterSpacing: 0.8,
-    },
-
-    inputBox: {
-      minHeight: 50,
-      paddingHorizontal: 12,
-      borderRadius: 14,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 7,
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    inputBoxText: {
-      flex: 1,
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 8,
-      color: TEXT,
-    },
-
-    textInput: {
-      minHeight: 50,
-      paddingHorizontal: 12,
-      borderRadius: 14,
-      fontFamily:
-        "DMSans_500Medium",
-      fontSize: 9,
-      color: TEXT,
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    textArea: {
-      minHeight: 88,
-      padding: 12,
-      borderRadius: 14,
-      fontFamily:
-        "DMSans_500Medium",
-      fontSize: 9,
-      color: TEXT,
-      backgroundColor: WHITE,
-      borderWidth: 1,
-      borderColor: BORDER,
-    },
-
-    dateRow: {
-      flexDirection: "row",
-      gap: 8,
-    },
-
-    note: {
-      marginTop: 12,
-      padding: 11,
-      borderRadius: 13,
-      flexDirection: "row",
-      gap: 7,
-      backgroundColor: "#FFF7E2",
-    },
-
-    noteText: {
-      flex: 1,
-      fontFamily:
-        "DMSans_400Regular",
-      fontSize: 7.5,
-      lineHeight: 12,
-      color: MUTED,
-    },
-
-    choiceCard: {
-      width: "100%",
-      maxWidth: 390,
-      maxHeight: "80%",
-      padding: 17,
-      borderRadius: 25,
-      backgroundColor: CREAM,
-    },
-
-    choiceRow: {
-      minHeight: 49,
-      paddingHorizontal: 12,
-      borderRadius: 13,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent:
-        "space-between",
-      backgroundColor: WHITE,
-      borderBottomWidth: 1,
-      borderBottomColor: BORDER,
-    },
-
-    choiceText: {
-      flex: 1,
-      fontFamily:
-        "DMSans_700Bold",
-      fontSize: 8.5,
-      color: TEXT,
-    },
-  });
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: CREAM,
+  },
+  loadingScreen: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: CREAM,
+  },
+  loadingTitle: {
+    marginTop: 14,
+    color: GREEN,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  loadingText: {
+    marginTop: 5,
+    color: MUTED,
+    fontSize: 10,
+    textAlign: "center",
+  },
+  content: {
+    padding: 14,
+    paddingBottom: 34,
+  },
+
+  hero: {
+    padding: 20,
+    marginBottom: 14,
+    borderRadius: 21,
+    backgroundColor: GREEN,
+  },
+  heroIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,.10)",
+    marginBottom: 12,
+  },
+  eyebrow: {
+    color: "#F5EBC9",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 1.1,
+  },
+  heroTitle: {
+    color: WHITE,
+    fontSize: 23,
+    fontWeight: "800",
+    marginTop: 5,
+  },
+  heroText: {
+    color: "rgba(255,255,255,.78)",
+    fontSize: 11,
+    lineHeight: 17,
+    marginTop: 7,
+  },
+  refreshButton: {
+    marginTop: 14,
+    alignSelf: "flex-start",
+    minHeight: 40,
+    paddingHorizontal: 13,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,.12)",
+  },
+  refreshText: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+
+  notice: {
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 9,
+  },
+  noticeTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  noticeText: {
+    marginTop: 2,
+    color: TEXT,
+    fontSize: 9,
+    lineHeight: 14,
+  },
+
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 9,
+    marginBottom: 14,
+  },
+  statCard: {
+    width: "48.6%",
+    minHeight: 106,
+    padding: 13,
+    borderRadius: 16,
+    backgroundColor: WHITE,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  statIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: MINT,
+    marginBottom: 8,
+  },
+  statLabel: {
+    color: MUTED,
+    fontSize: 9,
+    fontWeight: "700",
+  },
+  statValue: {
+    marginTop: 3,
+    color: GREEN,
+    fontSize: 22,
+    fontWeight: "800",
+  },
+
+  searchPanel: {
+    padding: 10,
+    marginBottom: 9,
+    borderRadius: 16,
+    flexDirection: "row",
+    gap: 8,
+    backgroundColor: WHITE,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  searchBox: {
+    flex: 1,
+    minHeight: 47,
+    paddingHorizontal: 11,
+    borderRadius: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 45,
+    color: TEXT,
+    fontSize: 11,
+  },
+  filterButton: {
+    width: 47,
+    height: 47,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  filterButtonActive: {
+    backgroundColor: GREEN,
+    borderColor: GREEN,
+  },
+  chips: {
+    marginBottom: 10,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 7,
+  },
+  filterChip: {
+    minHeight: 31,
+    paddingHorizontal: 9,
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: MINT,
+  },
+  filterChipText: {
+    color: GREEN,
+    fontSize: 9,
+    fontWeight: "700",
+  },
+  clearFilters: {
+    color: DANGER,
+    fontSize: 9,
+    fontWeight: "800",
+  },
+
+  panel: {
+    overflow: "hidden",
+    borderRadius: 19,
+    backgroundColor: WHITE,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  panelHeader: {
+    minHeight: 72,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  panelEyebrow: {
+    color: GOLD_DARK,
+    fontSize: 8,
+    fontWeight: "800",
+    letterSpacing: 0.7,
+  },
+  panelTitle: {
+    marginTop: 2,
+    color: GREEN,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  panelSub: {
+    marginTop: 2,
+    color: MUTED,
+    fontSize: 9,
+  },
+  resultPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: MINT,
+  },
+  resultText: {
+    color: GREEN,
+    fontSize: 9,
+    fontWeight: "800",
+  },
+
+  list: {
+    padding: 11,
+    gap: 10,
+  },
+  appointmentCard: {
+    padding: 12,
+    borderRadius: 15,
+    backgroundColor: "#FCFDFB",
+    borderWidth: 1,
+    borderColor: "#E7ECE8",
+  },
+  cardTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  patientBlock: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+  patientAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: GREEN,
+  },
+  patientAvatarText: {
+    color: WHITE,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  patientName: {
+    color: GREEN,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  patientPhone: {
+    marginTop: 2,
+    color: MUTED,
+    fontSize: 9,
+  },
+  badge: {
+    alignSelf: "flex-start",
+    maxWidth: 130,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  badgeText: {
+    fontSize: 8,
+    fontWeight: "800",
+  },
+
+  infoGrid: {
+  marginTop: 14,
+  flexDirection: "row",
+  flexWrap: "wrap",
+  justifyContent: "space-between",
+  rowGap: 10,
+},
+
+infoItem: {
+  width: "48%",
+  minHeight: 72,
+  paddingHorizontal: 12,
+  paddingVertical: 11,
+  borderRadius: 14,
+  flexDirection: "row",
+  alignItems: "flex-start",
+  gap: 9,
+  backgroundColor: WHITE,
+  borderWidth: 1,
+  borderColor: "#E3E9E5",
+},
+  infoLabel: {
+    color: MUTED,
+    fontSize: 8,
+    fontWeight: "700",
+  },
+  infoValue: {
+    marginTop: 2,
+    color: TEXT,
+    fontSize: 9,
+    lineHeight: 13,
+    fontWeight: "700",
+  },
+
+  symptomBox: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 11,
+    backgroundColor: "#F7F9F7",
+  },
+  symptomLabel: {
+    color: MUTED,
+    fontSize: 8,
+    fontWeight: "800",
+  },
+  symptomText: {
+    marginTop: 4,
+    color: TEXT,
+    fontSize: 10,
+    lineHeight: 15,
+  },
+
+  cardActions: {
+    marginTop: 11,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  viewButton: {
+    flex: 1,
+    minWidth: 85,
+    minHeight: 42,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    backgroundColor: MINT,
+  },
+  viewButtonText: {
+    color: GREEN,
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  completeButton: {
+    flex: 1,
+    minWidth: 100,
+    minHeight: 42,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    backgroundColor: SUCCESS_LIGHT,
+  },
+  completeButtonText: {
+    color: SUCCESS,
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  planButton: {
+    flex: 1,
+    minWidth: 85,
+    minHeight: 42,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    backgroundColor: "#FFF7DF",
+  },
+  planButtonText: {
+    color: GOLD_DARK,
+    fontSize: 9,
+    fontWeight: "800",
+  },
+
+  empty: {
+    minHeight: 170,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  emptyTitle: {
+    marginTop: 8,
+    color: GREEN,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  emptyText: {
+    marginTop: 4,
+    color: MUTED,
+    fontSize: 9,
+    textAlign: "center",
+  },
+
+  pagination: {
+    minHeight: 64,
+    padding: 12,
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  paginationText: {
+    flex: 1,
+    color: MUTED,
+    fontSize: 9,
+  },
+  paginationButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  pageButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  pageDisabled: {
+    opacity: 0.35,
+  },
+  currentPage: {
+    minWidth: 34,
+    height: 34,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: GREEN,
+  },
+  currentPageText: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  pageOf: {
+    color: MUTED,
+    fontSize: 9,
+  },
+
+  modalRoot: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(8,25,17,.56)",
+  },
+  sheetHandle: {
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginTop: 8,
+    marginBottom: 8,
+    backgroundColor: "#DDE4DF",
+  },
+  detailsSheet: {
+    height: "91%",
+    overflow: "hidden",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: WHITE,
+  },
+  planSheet: {
+    height: "91%",
+    overflow: "hidden",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: WHITE,
+  },
+  filterSheet: {
+    maxHeight: "90%",
+    overflow: "hidden",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: WHITE,
+  },
+  choiceSheet: {
+    maxHeight: "72%",
+    overflow: "hidden",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: WHITE,
+  },
+  detailsHeader: {
+    minHeight: 61,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  detailsTitle: {
+    color: GREEN,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  detailsSub: {
+    marginTop: 2,
+    color: GOLD_DARK,
+    fontSize: 8,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+  },
+  closeCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F7F4",
+  },
+  detailsBody: {
+    padding: 14,
+    paddingBottom: 22,
+  },
+  planBody: {
+    padding: 14,
+    paddingBottom: 26,
+  },
+  filterBody: {
+    padding: 14,
+    paddingBottom: 20,
+  },
+
+  patientHeader: {
+    marginBottom: 12,
+    padding: 13,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: MINT,
+  },
+  patientHeaderName: {
+    color: GREEN,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  patientHeaderMeta: {
+    marginTop: 3,
+    color: MUTED,
+    fontSize: 9,
+  },
+
+  detailsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  detailBox: {
+    width: "48.6%",
+    minHeight: 63,
+    padding: 10,
+    borderRadius: 11,
+    backgroundColor: "#FCFDFB",
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  detailWide: {
+    width: "100%",
+  },
+  detailLabel: {
+    marginBottom: 4,
+    color: MUTED,
+    fontSize: 8,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  detailValue: {
+    color: GREEN,
+    fontSize: 10,
+    lineHeight: 15,
+    fontWeight: "700",
+  },
+
+  errorBox: {
+    marginTop: 11,
+    padding: 11,
+    borderRadius: 11,
+    flexDirection: "row",
+    gap: 8,
+    backgroundColor: DANGER_LIGHT,
+  },
+  errorText: {
+    flex: 1,
+    color: DANGER,
+    fontSize: 9,
+    lineHeight: 14,
+  },
+
+  prescriptionState: {
+    marginTop: 12,
+    padding: 13,
+    borderRadius: 13,
+    backgroundColor: INFO_LIGHT,
+  },
+  prescriptionLabel: {
+    color: INFO,
+    fontSize: 8,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+  },
+  prescriptionTitle: {
+    marginTop: 4,
+    color: GREEN,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  prescriptionMeta: {
+    marginTop: 3,
+    color: MUTED,
+    fontSize: 9,
+  },
+  prescriptionHelp: {
+    marginTop: 7,
+    color: TEXT,
+    fontSize: 9,
+    lineHeight: 14,
+  },
+
+  detailsActions: {
+    padding: 12,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+    backgroundColor: WHITE,
+  },
+  secondaryAction: {
+    flex: 1,
+    minWidth: 90,
+    minHeight: 47,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: WHITE,
+  },
+  secondaryActionText: {
+    color: GREEN,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  primaryAction: {
+    flex: 1,
+    minWidth: 145,
+    minHeight: 47,
+    borderRadius: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: GREEN,
+  },
+  primaryActionText: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  planAction: {
+    flex: 1,
+    minWidth: 125,
+    minHeight: 47,
+    borderRadius: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#FFF7DF",
+  },
+  planActionText: {
+    color: GOLD_DARK,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  editAction: {
+    flex: 1,
+    minWidth: 140,
+    minHeight: 47,
+    borderRadius: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: INFO_LIGHT,
+  },
+  editActionText: {
+    color: INFO,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  downloadAction: {
+    flex: 1,
+    minWidth: 120,
+    minHeight: 47,
+    borderRadius: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: PURPLE_LIGHT,
+  },
+  downloadActionText: {
+    color: PURPLE,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  disabledAction: {
+    flex: 1,
+    minWidth: 150,
+    minHeight: 47,
+    borderRadius: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    backgroundColor: "#F3F5F3",
+  },
+  disabledActionText: {
+    color: MUTED,
+    fontSize: 9,
+    fontWeight: "700",
+  },
+
+  confirmCard: {
+    margin: 18,
+    padding: 17,
+    borderRadius: 20,
+    backgroundColor: WHITE,
+  },
+  confirmIcon: {
+    width: 54,
+    height: 54,
+    alignSelf: "center",
+    marginBottom: 10,
+    borderRadius: 27,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: SUCCESS_LIGHT,
+  },
+  confirmTitle: {
+    marginBottom: 13,
+    color: GREEN,
+    fontSize: 17,
+    textAlign: "center",
+    fontWeight: "800",
+  },
+  confirmText: {
+    marginVertical: 10,
+    color: TEXT,
+    fontSize: 10,
+    lineHeight: 16,
+    textAlign: "center",
+  },
+  confirmActions: {
+    marginTop: 7,
+    flexDirection: "row",
+    gap: 8,
+  },
+
+  fieldLabel: {
+    marginBottom: 7,
+    color: GREEN,
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  fieldLabelTop: {
+    marginTop: 14,
+  },
+  textInput: {
+    minHeight: 48,
+    paddingHorizontal: 12,
+    borderRadius: 11,
+    color: TEXT,
+    fontSize: 11,
+    backgroundColor: "#FCFDFB",
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  textArea: {
+    minHeight: 88,
+    paddingTop: 11,
+  },
+  inputBox: {
+    minHeight: 48,
+    paddingHorizontal: 12,
+    borderRadius: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#FCFDFB",
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  inputBoxText: {
+    flex: 1,
+    color: TEXT,
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  placeholder: {
+    color: "#9AA59E",
+  },
+  dateRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  dateButton: {
+    minHeight: 48,
+    paddingHorizontal: 10,
+    borderRadius: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    backgroundColor: "#FCFDFB",
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  dateButtonText: {
+    flex: 1,
+    color: TEXT,
+    fontSize: 9,
+    fontWeight: "600",
+  },
+
+  filterDateRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  filterDateButton: {
+    flex: 1,
+    minHeight: 46,
+    paddingHorizontal: 11,
+    borderRadius: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  filterDateText: {
+    flex: 1,
+    color: TEXT,
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  clearDateButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: DANGER_LIGHT,
+  },
+  optionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 7,
+  },
+  optionChip: {
+    minHeight: 35,
+    paddingHorizontal: 10,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: WHITE,
+  },
+  optionChipActive: {
+    backgroundColor: GREEN,
+    borderColor: GREEN,
+  },
+  optionChipText: {
+    color: TEXT,
+    fontSize: 9,
+    fontWeight: "700",
+  },
+  optionChipTextActive: {
+    color: WHITE,
+  },
+
+  choiceList: {
+    padding: 12,
+    gap: 7,
+  },
+  choiceRow: {
+    minHeight: 58,
+    padding: 10,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    backgroundColor: "#FCFDFB",
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  choiceRowActive: {
+    backgroundColor: SUCCESS_LIGHT,
+    borderColor: "#CFE5D8",
+  },
+  choiceAvatar: {
+    width: 37,
+    height: 37,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: MINT,
+  },
+  choiceName: {
+    color: GREEN,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  choiceMeta: {
+    marginTop: 2,
+    color: MUTED,
+    fontSize: 9,
+  },
+
+  prescriptionScreen: {
+    flex: 1,
+    backgroundColor: CREAM,
+    paddingTop: Platform.OS === "android" ? 28 : 44,
+  },
+  prescriptionScreenHeader: {
+    minHeight: 70,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: WHITE,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: MINT,
+  },
+  prescriptionScreenEyebrow: {
+    color: GOLD_DARK,
+    fontSize: 8,
+    fontWeight: "800",
+    letterSpacing: 0.7,
+  },
+  prescriptionScreenTitle: {
+    marginTop: 2,
+    color: GREEN,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  prescriptionScreenBody: {
+    padding: 14,
+    paddingBottom: 30,
+  },
+
+  medicineSection: {
+    marginTop: 14,
+  },
+  medicineHeader: {
+    marginBottom: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  medicineTitle: {
+    color: GREEN,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  medicineCount: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 13,
+    backgroundColor: MINT,
+  },
+  medicineCountText: {
+    color: GREEN,
+    fontSize: 8,
+    fontWeight: "800",
+  },
+  medicineCard: {
+    marginBottom: 9,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: WHITE,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  medicineName: {
+    color: GREEN,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  medicineGrid: {
+    marginTop: 9,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 7,
+  },
+  medicineValue: {
+    width: "48.7%",
+    padding: 8,
+    borderRadius: 9,
+    backgroundColor: "#F7F9F7",
+  },
+  medicineValueLabel: {
+    color: MUTED,
+    fontSize: 7,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  medicineValueText: {
+    marginTop: 2,
+    color: TEXT,
+    fontSize: 9,
+    fontWeight: "700",
+  },
+  instructionBox: {
+    marginTop: 8,
+    padding: 9,
+    borderRadius: 9,
+    backgroundColor: INFO_LIGHT,
+  },
+  instructionLabel: {
+    color: INFO,
+    fontSize: 7,
+    fontWeight: "800",
+  },
+  instructionText: {
+    marginTop: 3,
+    color: TEXT,
+    fontSize: 9,
+    lineHeight: 14,
+  },
+});

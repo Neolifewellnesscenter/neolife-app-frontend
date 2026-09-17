@@ -1,0 +1,39 @@
+# Git repository/history
+.git
+.git/**
+
+# Dependencies - EAS installs these from package.json
+node_modules
+node_modules/**
+
+# Expo local cache
+.expo
+.expo/**
+
+# Editor / local development files
+.vscode
+.vscode/**
+.claude
+.claude/**
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary/cache files
+.cache
+.cache/**
+tmp
+tmp/**
+temp
+temp/**
+
+# Local environment files
+.env.local
+.env.*.local

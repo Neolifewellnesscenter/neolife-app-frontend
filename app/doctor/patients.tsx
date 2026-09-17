@@ -1,22 +1,10 @@
-import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  DMSans_400Regular,
-  DMSans_500Medium,
-  DMSans_700Bold,
-  useFonts as useDMSans,
-} from "@expo-google-fonts/dm-sans";
-import {
-  PlayfairDisplay_600SemiBold,
-  PlayfairDisplay_700Bold,
-  useFonts as usePlayfair,
-} from "@expo-google-fonts/playfair-display";
-import { router, useLocalSearchParams } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -26,6 +14,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+import DoctorDrawer from "../../components/DoctorDrawer";
+import DoctorHeader from "../../components/DoctorHeader";
 import { API_BASE_URL } from "../../services/api";
 
 const GREEN = "#0B3D2E";
@@ -33,7 +24,6 @@ const GREEN_2 = "#14533D";
 const MINT = "#EAF5EF";
 const GOLD = "#D6B45B";
 const GOLD_DARK = "#A98632";
-const GOLD_LIGHT = "#F4E6B7";
 const CREAM = "#FBFAF6";
 const WHITE = "#FFFFFF";
 const TEXT = "#17231D";
@@ -41,109 +31,159 @@ const MUTED = "#75837B";
 const BORDER = "#E6EBE7";
 const DANGER = "#B95045";
 const DANGER_LIGHT = "#FBECE9";
-const SUCCESS = "#2E7D52";
-const SUCCESS_LIGHT = "#EAF6EF";
-const WARNING = "#C88723";
-const WARNING_LIGHT = "#FFF6E7";
-const INFO = "#397A9A";
-const INFO_LIGHT = "#EDF7FC";
+const SUCCESS = "#287146";
+const SUCCESS_LIGHT = "#EBF7EF";
+const WARNING = "#946300";
+const WARNING_LIGHT = "#FFF6E8";
+const INFO = "#31708F";
+const INFO_LIGHT = "#EDF6FB";
 
-type PatientView = "ALL" | "REGISTERED" | "WALK_IN";
+const PAGE_SIZE = 8;
+
 type GenderFilter = "" | "MALE" | "FEMALE" | "OTHER";
 type InteractionFilter = 0 | 7 | 30 | 90;
 
 type Patient = {
   id: string | number;
-  walkInPatientId: string | number | null;
-  isWalkInPatient: boolean;
   code: string;
   name: string;
   phone: string;
   email: string;
   age: string | number;
   gender: string;
-  patientType: "REGISTERED" | "WALK_IN";
-  visitDate: string | null;
-  visitTime: string | null;
   status: string;
   totalAppointments: number;
   totalConsultations: number;
   totalInteractions: number;
   lastInteractionAt: string | null;
+  visitDate: string | null;
   symptoms: string;
   pastMedicalHistory: string;
 };
 
-type MedicalRecord = {
-  patient?: any;
-  patientDetails?: any;
-  appointments?: any[];
-  consultations?: any[];
-  prescriptions?: any[];
-  therapies?: any[];
-  treatmentPlans?: any[];
-  notes?: any[];
-};
-
-type NoticeType = "success" | "error" | "warning" | "info";
-
 type Notice = {
   visible: boolean;
-  type: NoticeType;
+  type: "success" | "error" | "warning" | "info";
   title: string;
   message: string;
 };
 
-const MENU_ITEMS = [
-  ["grid-outline", "Dashboard", "/doctor/dashboard", "MAIN"],
-  ["people-outline", "Patients", "/doctor/patients", "MAIN"],
-  ["calendar-outline", "Appointment Calendar", "/doctor/calendar", "MAIN"],
-  ["calendar-number-outline", "Upcoming Schedule", "/doctor/schedule", "MAIN"],
-  ["time-outline", "Manage Availability", "/doctor/availability", "MAIN"],
-  ["clipboard-outline", "Appointment Details", "/doctor/appointments", "CLINICAL"],
-  ["videocam-outline", "Consultation Details", "/doctor/consultations", "CLINICAL"],
-  ["card-outline", "Transactions", "/doctor/transactions", "FINANCE"],
-  ["person-circle-outline", "My Profile", "/doctor/profile", "FINANCE"],
-] as const;
+function titleCase(value: any) {
+  return String(value || "—")
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "—";
+  const datePart = String(value).slice(0, 10);
+  const date = new Date(`${datePart}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatTime(value?: string | null) {
+  if (!value) return "—";
+  const [hour, minute] = String(value).split(":").map(Number);
+
+  if (!Number.isFinite(hour)) return String(value);
+
+  return new Date(2000, 0, 1, hour, minute || 0).toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function extractList(result: any): any[] {
+  if (Array.isArray(result)) return result;
+  if (Array.isArray(result?.data)) return result.data;
+  if (Array.isArray(result?.data?.content)) return result.data.content;
+  if (Array.isArray(result?.content)) return result.content;
+  return [];
+}
+
+function normalizePatient(patient: any): Patient {
+  const id = patient?.patientId ?? patient?.id ?? patient?.userId ?? "";
+
+  const totalAppointments = Number(patient?.totalAppointments || 0);
+  const totalConsultations = Number(patient?.totalConsultations || 0);
+
+  return {
+    id,
+    code: id !== "" ? `NL-P-${id}` : "—",
+    name: patient?.patientName || patient?.name || "Patient",
+    phone: patient?.phoneNumber || patient?.phone || "—",
+    email: patient?.email || "—",
+    age: patient?.age ?? "—",
+    gender: String(patient?.gender || "—").toUpperCase(),
+    status: String(patient?.status || "REGISTERED").toUpperCase(),
+    totalAppointments,
+    totalConsultations,
+    totalInteractions: totalAppointments + totalConsultations,
+    lastInteractionAt:
+      patient?.lastInteractionAt ||
+      patient?.visitDate ||
+      patient?.updatedAt ||
+      patient?.createdAt ||
+      null,
+    visitDate:
+      patient?.visitDate ||
+      patient?.lastInteractionAt ||
+      patient?.appointmentDate ||
+      patient?.consultationDate ||
+      null,
+    symptoms: patient?.symptoms || "",
+    pastMedicalHistory: patient?.pastMedicalHistory || "",
+  };
+}
 
 export default function DoctorPatientsScreen() {
-  const params = useLocalSearchParams<{ view?: string; walkInPatientId?: string }>();
-
-  const [dmLoaded] = useDMSans({
-    DMSans_400Regular,
-    DMSans_500Medium,
-    DMSans_700Bold,
-  });
-
-  const [playfairLoaded] = usePlayfair({
-    PlayfairDisplay_600SemiBold,
-    PlayfairDisplay_700Bold,
-  });
-
   const [menuOpen, setMenuOpen] = useState(false);
-  const [doctorName, setDoctorName] = useState("Doctor");
-  const [doctorInitial, setDoctorInitial] = useState("D");
-  const [hasOnline, setHasOnline] = useState<boolean | null>(null);
-  const [hasOffline, setHasOffline] = useState<boolean | null>(null);
 
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [patientView, setPatientView] = useState<PatientView>(
-    String(params.view || "").toLowerCase() === "walkin" ? "WALK_IN" : "ALL"
-  );
   const [search, setSearch] = useState("");
   const [gender, setGender] = useState<GenderFilter>("");
-  const [interactionDays, setInteractionDays] = useState<InteractionFilter>(0);
+  const [interactionDays, setInteractionDays] =
+    useState<InteractionFilter>(0);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [page, setPage] = useState(1);
 
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
-  const [recordMode, setRecordMode] = useState<"RECORD" | "APPOINTMENTS" | "WALK_IN">("RECORD");
   const [recordLoading, setRecordLoading] = useState(false);
-  const [medicalRecord, setMedicalRecord] = useState<MedicalRecord | null>(null);
-  const [appointmentHistory, setAppointmentHistory] = useState<any[]>([]);
+  const [medicalRecord, setMedicalRecord] = useState<any | null>(null);
+
+  const [prescriptionView, setPrescriptionView] = useState<any | null>(null);
+  const [prescriptionLoading, setPrescriptionLoading] = useState(false);
+  const [prescriptionError, setPrescriptionError] = useState("");
+
+  // Same flow as website Patient Dashboard:
+  // first load the patient's complete record, then let the doctor select
+  // the exact prescription from record.prescriptions.
+  const [prescriptionListOpen, setPrescriptionListOpen] = useState(false);
+  const [prescriptionListPatient, setPrescriptionListPatient] =
+    useState<Patient | null>(null);
+  const [prescriptionList, setPrescriptionList] = useState<any[]>([]);
+  const [prescriptionListLoading, setPrescriptionListLoading] = useState(false);
+
+  const [prescriptionsByPatient, setPrescriptionsByPatient] = useState<
+    Record<string, any[]>
+  >({});
+  const [latestCompletedAppointmentByPatient, setLatestCompletedAppointmentByPatient] =
+    useState<Record<string, any | null>>({});
+  const [prescriptionCheckComplete, setPrescriptionCheckComplete] = useState<
+    Record<string, boolean>
+  >({});
 
   const [notice, setNotice] = useState<Notice>({
     visible: false,
@@ -152,16 +192,24 @@ export default function DoctorPatientsScreen() {
     message: "",
   });
 
-  const [logoutOpen, setLogoutOpen] = useState(false);
-
-  function showNotice(type: NoticeType, title: string, message: string) {
-    setNotice({ visible: true, type, title, message });
+  function showNotice(
+    type: Notice["type"],
+    title: string,
+    message: string
+  ) {
+    setNotice({
+      visible: true,
+      type,
+      title,
+      message,
+    });
   }
 
   async function getToken() {
     return (
       (await AsyncStorage.getItem("doctorToken")) ||
-      (await AsyncStorage.getItem("token"))
+      (await AsyncStorage.getItem("token")) ||
+      ""
     );
   }
 
@@ -174,8 +222,6 @@ export default function DoctorPatientsScreen() {
       "role",
       "doctorId",
       "doctorName",
-      "doctorHasOnline",
-      "doctorHasOffline",
       "doctor",
       "userId",
       "email",
@@ -209,13 +255,12 @@ export default function DoctorPatientsScreen() {
     });
 
     const text = await response.text();
-    let result: any = {};
 
+    let result: any = {};
     try {
       result = text ? JSON.parse(text) : {};
     } catch {
       result = {
-        success: false,
         message: text || `Invalid server response (${response.status}).`,
       };
     }
@@ -223,17 +268,28 @@ export default function DoctorPatientsScreen() {
     if (response.status === 401) {
       await clearDoctorSession();
       router.replace("/login" as any);
-      throw new Error(result?.message || "Doctor session expired. Please login again.");
-    }
 
-    if (response.status === 403) {
       throw new Error(
-        result?.message || "You do not have permission to access this resource."
+        result?.message || "Your session expired. Please log in again."
       );
     }
 
+    // 403 is a resource permission error. Do not destroy a valid doctor session.
+    if (response.status === 403) {
+      const error: any = new Error(
+        result?.message ||
+          "You do not have permission to access this resource."
+      );
+      error.status = 403;
+      throw error;
+    }
+
     if (!response.ok || result?.success === false) {
-      throw new Error(result?.message || "Request failed.");
+      const error: any = new Error(
+        result?.message || `Request failed (${response.status}).`
+      );
+      error.status = response.status;
+      throw error;
     }
 
     return result;
@@ -241,7 +297,9 @@ export default function DoctorPatientsScreen() {
 
   async function validateDoctor() {
     const token = await getToken();
-    const role = String((await AsyncStorage.getItem("role")) || "").toUpperCase();
+    const role = String((await AsyncStorage.getItem("role")) || "")
+      .replace(/^ROLE_/i, "")
+      .toUpperCase();
 
     if (!token || (role && role !== "DOCTOR")) {
       await clearDoctorSession();
@@ -252,209 +310,159 @@ export default function DoctorPatientsScreen() {
     return true;
   }
 
-  function getInitial(name: string) {
-    return (
-      String(name || "Doctor")
-        .replace(/^Dr\.?\s*/i, "")
-        .trim()
-        .charAt(0)
-        .toUpperCase() || "D"
-    );
-  }
-
   async function loadDoctorProfile() {
-    const storedName =
-      (await AsyncStorage.getItem("doctorName")) ||
-      (await AsyncStorage.getItem("name")) ||
-      "Doctor";
-
-    setDoctorName(storedName);
-    setDoctorInitial(getInitial(storedName));
-
     try {
       const result = await apiRequest("/doctors/my-profile");
       const profile = result?.data || {};
-      const name = profile.name || profile.doctorName || storedName;
 
-      setDoctorName(name);
-      setDoctorInitial(getInitial(name));
-      await AsyncStorage.setItem("doctorName", name);
-
-      if (profile.id != null) {
-        await AsyncStorage.setItem("doctorId", String(profile.id));
-      }
-
-      return profile;
-    } catch {
-      return {};
-    }
-  }
-
-  async function loadConsultationModes(profile?: any) {
-    const doctorId =
-      profile?.id || Number(await AsyncStorage.getItem("doctorId"));
-
-    if (!doctorId) return;
-
-    try {
-      const result = await apiRequest(
-        `/doctor-availability/doctor/${encodeURIComponent(String(doctorId))}`
-      );
-
-      const slots = Array.isArray(result)
-        ? result
-        : Array.isArray(result?.data)
-        ? result.data
-        : Array.isArray(result?.data?.content)
-        ? result.data.content
-        : Array.isArray(result?.content)
-        ? result.content
-        : [];
-
-      const active = slots.filter((slot: any) => slot?.active !== false);
-
-      const online = active.some(
-        (slot: any) =>
-          String(slot.appointmentMode || "").toUpperCase() === "ONLINE"
-      );
-
-      const offline = active.some(
-        (slot: any) =>
-          String(slot.appointmentMode || "").toUpperCase() === "OFFLINE"
-      );
-
-      if (!online && !offline) {
-        setHasOnline(null);
-        setHasOffline(null);
-        return;
-      }
-
-      setHasOnline(online);
-      setHasOffline(offline);
+      const name = profile?.name || profile?.doctorName || "Doctor";
 
       await AsyncStorage.multiSet([
-        ["doctorHasOnline", String(online)],
-        ["doctorHasOffline", String(offline)],
+        ["doctorName", name],
+        ["doctor", JSON.stringify(profile)],
       ]);
-    } catch {
-      const online = await AsyncStorage.getItem("doctorHasOnline");
-      const offline = await AsyncStorage.getItem("doctorHasOffline");
 
-      if (online !== null || offline !== null) {
-        setHasOnline(online === "true");
-        setHasOffline(offline === "true");
+      if (profile?.id != null) {
+        await AsyncStorage.setItem("doctorId", String(profile.id));
       }
+    } catch {
+      // Patient listing can still load even if profile refresh fails.
     }
   }
 
-  function normalizePatient(patient: any): Patient {
-    const id = patient.patientId ?? patient.id ?? patient.userId ?? "";
-
-    const appointments = Number(patient.totalAppointments || 0);
-    const consultations = Number(patient.totalConsultations || 0);
-
-    return {
-      id,
-      walkInPatientId: null,
-      isWalkInPatient: false,
-      code: id !== "" ? `NL-P-${id}` : "-",
-      name: patient.patientName || patient.name || "Patient",
-      phone: patient.phoneNumber || patient.phone || "-",
-      email: patient.email || "-",
-      age: patient.age ?? "-",
-      gender: String(patient.gender || "-").toUpperCase(),
-      patientType: "REGISTERED",
-      visitDate: patient.lastInteractionAt || null,
-      visitTime: patient.startTime || null,
-      status: String(patient.status || "REGISTERED").toUpperCase(),
-      totalAppointments: appointments,
-      totalConsultations: consultations,
-      totalInteractions: appointments + consultations,
-      lastInteractionAt: patient.lastInteractionAt || null,
-      symptoms: patient.symptoms || "",
-      pastMedicalHistory: patient.pastMedicalHistory || "",
-    };
-  }
-
-  function normalizeWalkInPatient(patient: any): Patient {
-    const id = patient.id ?? patient.walkInPatientId ?? "";
-
-    return {
-      id: `WALK-${id}`,
-      walkInPatientId: id,
-      isWalkInPatient: true,
-      code: id !== "" ? `WALK-${id}` : "-",
-      name: patient.name || patient.patientName || "Walk-in Patient",
-      phone: patient.phoneNumber || "-",
-      email: "-",
-      age: patient.age ?? "-",
-      gender: String(patient.gender || "-").toUpperCase(),
-      patientType: "WALK_IN",
-      visitDate: patient.appointmentDate || null,
-      visitTime: patient.startTime || null,
-      status: String(patient.status || "WAITING").toUpperCase(),
-      totalAppointments: 0,
-      totalConsultations: 0,
-      totalInteractions: 1,
-      lastInteractionAt: patient.appointmentDate || null,
-      symptoms: patient.symptoms || "",
-      pastMedicalHistory: patient.pastMedicalHistory || "",
-    };
-  }
-
+  /**
+   * Registered-patient list.
+   *
+   * IMPORTANT:
+   * PatientRecordController does NOT expose:
+   *   GET /patient-records/doctor/patients
+   *
+   * The existing doctor dashboard patient-list API is therefore used here.
+   * No walk-in API is called on this page.
+   */
   async function loadPatients() {
-    const results = await Promise.allSettled([
-      apiRequest("/doctor-dashboard/patients"),
-      apiRequest("/walk-in-patients/doctor/my-patients"),
-    ]);
+    const result = await apiRequest("/doctor-dashboard/patients");
 
-    const regular =
-      results[0].status === "fulfilled" && Array.isArray(results[0].value?.data)
-        ? results[0].value.data.map(normalizePatient)
-        : [];
+    const regularPatients = extractList(result)
+      .map(normalizePatient)
+      .filter(
+        (patient) =>
+          patient.id !== null &&
+          patient.id !== undefined &&
+          String(patient.id) !== ""
+      );
 
-    const walkIns =
-      results[1].status === "fulfilled" && Array.isArray(results[1].value?.data)
-        ? results[1].value.data.map(normalizeWalkInPatient)
-        : [];
+    setPatients(regularPatients);
 
-    const combined = [...regular, ...walkIns].filter(
-      (patient) =>
-        patient.isWalkInPatient
-          ? patient.walkInPatientId !== null && patient.walkInPatientId !== ""
-          : patient.id !== null && patient.id !== ""
+    // Secondary prescription/appointment checks are independent of the list.
+    void loadPrescriptionAvailability(regularPatients);
+  }
+
+  /**
+   * The backend PatientRecordController/Service supports both endpoints below
+   * for DOCTOR role.
+   *
+   * We use them to determine whether the latest completed appointment already
+   * has a prescription.
+   */
+  async function loadPrescriptionAvailability(registeredPatients: Patient[]) {
+    if (!registeredPatients.length) {
+      setPrescriptionsByPatient({});
+      setLatestCompletedAppointmentByPatient({});
+      setPrescriptionCheckComplete({});
+      return;
+    }
+
+    const checks = await Promise.allSettled(
+      registeredPatients.map(async (patient) => {
+        const patientId = String(patient.id);
+
+        const [appointmentsResult, prescriptionsResult] = await Promise.all([
+          apiRequest(
+            `/patient-records/patient/${encodeURIComponent(
+              patientId
+            )}/appointments`
+          ),
+          apiRequest(
+            `/patient-records/patient/${encodeURIComponent(
+              patientId
+            )}/prescriptions`
+          ),
+        ]);
+
+        const appointments = extractList(appointmentsResult);
+        const prescriptions = extractList(prescriptionsResult);
+
+        const completedAppointments = appointments
+          .filter(
+            (appointment: any) =>
+              String(appointment?.status || "").toUpperCase() === "COMPLETED"
+          )
+          .sort((a: any, b: any) => {
+            const aKey = `${
+              a?.appointmentDate || String(a?.createdAt || "").slice(0, 10)
+            }T${a?.startTime || "00:00:00"}`;
+
+            const bKey = `${
+              b?.appointmentDate || String(b?.createdAt || "").slice(0, 10)
+            }T${b?.startTime || "00:00:00"}`;
+
+            return bKey.localeCompare(aKey);
+          });
+
+        const latestCompletedAppointment = completedAppointments[0] || null;
+
+        const appointmentId =
+          latestCompletedAppointment?.id ??
+          latestCompletedAppointment?.appointmentId ??
+          null;
+
+        const matchingPrescriptions = appointmentId
+          ? prescriptions
+              .filter(
+                (prescription: any) =>
+                  String(
+                    prescription?.appointmentId ??
+                      prescription?.appointment?.id ??
+                      ""
+                  ) === String(appointmentId)
+              )
+              .sort((a: any, b: any) =>
+                String(b?.createdAt || "").localeCompare(
+                  String(a?.createdAt || "")
+                )
+              )
+          : [];
+
+        return {
+          patientId,
+          latestCompletedAppointment,
+          prescriptions: matchingPrescriptions,
+        };
+      })
     );
 
-    setPatients(combined);
+    const prescriptionMap: Record<string, any[]> = {};
+    const appointmentMap: Record<string, any | null> = {};
+    const completeMap: Record<string, boolean> = {};
 
-    if (results.every((result) => result.status === "rejected")) {
-      throw new Error("Unable to load patient records.");
-    }
+    checks.forEach((check, index) => {
+      const patientId = String(registeredPatients[index].id);
+      completeMap[patientId] = true;
 
-    if (results.some((result) => result.status === "rejected")) {
-      showNotice(
-        "warning",
-        "Some Patients Could Not Load",
-        "Part of the patient list could not be loaded. Pull down to try again."
-      );
-    }
-
-    const walkInId = String(params.walkInPatientId || "");
-    if (walkInId) {
-      const patient = combined.find(
-        (item) =>
-          item.isWalkInPatient &&
-          String(item.walkInPatientId) === walkInId
-      );
-
-      if (patient) {
-        setSelectedPatient(patient);
-        setRecordMode("WALK_IN");
-        setMedicalRecord(null);
-        setAppointmentHistory([]);
-        setRecordOpen(true);
+      if (check.status === "fulfilled") {
+        prescriptionMap[patientId] = check.value.prescriptions;
+        appointmentMap[patientId] =
+          check.value.latestCompletedAppointment;
+      } else {
+        prescriptionMap[patientId] = [];
+        appointmentMap[patientId] = null;
       }
-    }
+    });
+
+    setPrescriptionsByPatient(prescriptionMap);
+    setLatestCompletedAppointmentByPatient(appointmentMap);
+    setPrescriptionCheckComplete(completeMap);
   }
 
   async function loadPage(initial = false) {
@@ -464,14 +472,12 @@ export default function DoctorPatientsScreen() {
       const valid = await validateDoctor();
       if (!valid) return;
 
-      const profile = await loadDoctorProfile();
-      await loadConsultationModes(profile);
-      await loadPatients();
+      await Promise.all([loadDoctorProfile(), loadPatients()]);
     } catch (error: any) {
       showNotice(
         "error",
         "Unable to Load Patients",
-        error?.message || "Unable to load patients."
+        error?.message || "Unable to load registered patients."
       );
     } finally {
       setLoading(false);
@@ -480,7 +486,7 @@ export default function DoctorPatientsScreen() {
   }
 
   useEffect(() => {
-    loadPage(true);
+    void loadPage(true);
   }, []);
 
   async function onRefresh() {
@@ -494,7 +500,9 @@ export default function DoctorPatientsScreen() {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return false;
 
-    const difference = (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24);
+    const difference =
+      (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24);
+
     return difference >= 0 && difference <= days;
   }
 
@@ -518,18 +526,29 @@ export default function DoctorPatientsScreen() {
           interactionDays
         );
 
-      const matchesView =
-        patientView === "ALL" ||
-        (patientView === "WALK_IN" && patient.isWalkInPatient) ||
-        (patientView === "REGISTERED" && !patient.isWalkInPatient);
-
-      return matchesSearch && matchesGender && matchesDate && matchesView;
+      return matchesSearch && matchesGender && matchesDate;
     });
-  }, [patients, search, gender, interactionDays, patientView]);
+  }, [patients, search, gender, interactionDays]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, gender, interactionDays]);
+
+  const pageCount = Math.max(
+    1,
+    Math.ceil(filteredPatients.length / PAGE_SIZE)
+  );
+
+  const safePage = Math.min(page, pageCount);
+
+  const visiblePatients = filteredPatients.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
+  );
 
   const summary = useMemo(
     () => ({
-      total: patients.length,
+      patients: patients.length,
       appointments: patients.reduce(
         (sum, patient) => sum + patient.totalAppointments,
         0
@@ -547,742 +566,1175 @@ export default function DoctorPatientsScreen() {
 
   async function openPatientRecord(patient: Patient) {
     setSelectedPatient(patient);
-    setRecordMode("RECORD");
     setRecordOpen(true);
     setRecordLoading(true);
     setMedicalRecord(null);
-    setAppointmentHistory([]);
 
     try {
+      // Existing backend:
+      // GET /api/patient-records/patient/{patientId}
       const result = await apiRequest(
-        `/patient-records/patient/${encodeURIComponent(String(patient.id))}`
+        `/patient-records/patient/${encodeURIComponent(
+          String(patient.id)
+        )}`
       );
+
       setMedicalRecord(result?.data || {});
     } catch (error: any) {
+      setRecordOpen(false);
+
       showNotice(
         "error",
         "Medical Record Unavailable",
         error?.message || "Unable to load patient medical record."
       );
-      setRecordOpen(false);
     } finally {
       setRecordLoading(false);
     }
   }
 
-  async function openAppointmentHistory(patient: Patient) {
-    setSelectedPatient(patient);
-    setRecordMode("APPOINTMENTS");
-    setRecordOpen(true);
-    setRecordLoading(true);
-    setMedicalRecord(null);
-    setAppointmentHistory([]);
+  async function viewPrescription(summary: any) {
+    if (!summary?.id) return;
+
+    setPrescriptionLoading(true);
+    setPrescriptionError("");
+    setPrescriptionView(null);
 
     try {
+      // Current PrescriptionController:
+      // GET /api/prescriptions/{id}
       const result = await apiRequest(
-        `/patient-records/patient/${encodeURIComponent(
-          String(patient.id)
-        )}/appointments`
+        `/prescriptions/${encodeURIComponent(String(summary.id))}`
       );
 
-      const list = Array.isArray(result?.data)
-        ? result.data
-        : Array.isArray(result?.data?.content)
-        ? result.data.content
-        : [];
-
-      setAppointmentHistory(list);
+      setPrescriptionView(result?.data || summary);
     } catch (error: any) {
-      showNotice(
-        "error",
-        "History Unavailable",
-        error?.message || "Unable to load appointment history."
+      setPrescriptionError(
+        error?.message || "Unable to load prescription."
       );
-      setRecordOpen(false);
+
+      // Keep the summary so the modal can still display the error.
+      setPrescriptionView({
+        ...summary,
+        __loadError: true,
+      });
     } finally {
-      setRecordLoading(false);
+      setPrescriptionLoading(false);
     }
   }
 
-  function openWalkInPatient(patient: Patient) {
-    setSelectedPatient(patient);
-    setRecordMode("WALK_IN");
-    setMedicalRecord(null);
-    setAppointmentHistory([]);
-    setRecordOpen(true);
+  async function openRegisteredPrescription(patient: Patient) {
+  setPrescriptionListPatient(patient);
+  setPrescriptionList([]);
+  setPrescriptionListOpen(true);
+  setPrescriptionListLoading(true);
+
+  try {
+    const result = await apiRequest(
+      `/patient-records/patient/${encodeURIComponent(
+        String(patient.id)
+      )}`
+    );
+
+    const record = result?.data || {};
+
+    const prescriptions = Array.isArray(record?.prescriptions)
+      ? record.prescriptions
+      : [];
+
+    const doctorId = await AsyncStorage.getItem("doctorId");
+
+    const doctorPrescriptions = prescriptions.filter(
+      (prescription: any) =>
+        String(prescription?.doctorId || "") ===
+        String(doctorId || "")
+    );
+
+    const sorted = [...doctorPrescriptions].sort(
+      (a: any, b: any) =>
+        String(b?.createdAt || "").localeCompare(
+          String(a?.createdAt || "")
+        )
+    );
+
+    setPrescriptionList(sorted);
+  } catch (error: any) {
+    setPrescriptionListOpen(false);
+
+    showNotice(
+      "error",
+      "Unable to Load Prescriptions",
+      error?.message || "Unable to load patient prescriptions."
+    );
+  } finally {
+    setPrescriptionListLoading(false);
   }
+}
 
-  function openPrescription(patient: Patient, startVisit = false) {
-    if (!patient.walkInPatientId) {
-      showNotice("error", "Patient Not Found", "Walk-in patient ID is missing.");
-      return;
-    }
-
-    if (patient.status === "COMPLETED" && startVisit) {
-      showNotice(
-        "info",
-        "Visit Completed",
-        "This walk-in visit is already completed."
-      );
-      return;
-    }
-
-    setRecordOpen(false);
-
-    router.push({
-      pathname: "/doctor/prescription-pad" as any,
-      params: {
-        walkInPatientId: String(patient.walkInPatientId),
-        source: "walkin",
-        ...(startVisit ? { startVisit: "true" } : {}),
-      },
-    });
-  }
-
-  function visibleMenuItem(label: string) {
-    if (label === "Appointment Details" && hasOffline === false) return false;
-    if (label === "Consultation Details" && hasOnline === false) return false;
-    return true;
-  }
-
-  async function logout() {
-    await clearDoctorSession();
-    setLogoutOpen(false);
-    router.replace("/login" as any);
-  }
-
-  if (!dmLoaded || !playfairLoaded) {
+  if (loading) {
     return (
       <View style={styles.loaderPage}>
         <ActivityIndicator size="large" color={GREEN} />
-        <Text style={styles.loaderText}>Preparing patient dashboard...</Text>
+        <Text style={styles.loaderTitle}>Loading patients</Text>
+        <Text style={styles.loaderText}>
+          Fetching your registered patient records...
+        </Text>
       </View>
     );
   }
 
   return (
     <View style={styles.screen}>
-      {/* HEADER */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.headerIcon}
-          onPress={() => setMenuOpen(true)}
-        >
-          <Ionicons name="menu-outline" size={25} color={GREEN} />
-        </TouchableOpacity>
+      <DoctorHeader
+        title="Patients"
+        subtitle="Registered patient records"
+        onMenuPress={() => setMenuOpen(true)}
+      />
 
-        <View style={styles.headerTitleWrap}>
-          <Text style={styles.headerEyebrow}>DOCTOR PORTAL</Text>
-          <Text style={styles.headerTitle}>Patients</Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.headerIcon}
-          onPress={() => router.replace("/doctor/dashboard" as any)}
-        >
-          <Ionicons name="grid-outline" size={20} color={GREEN} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.avatar}
-          onPress={() => router.push("/doctor/profile" as any)}
-        >
-          <Text style={styles.avatarText}>{doctorInitial}</Text>
-        </TouchableOpacity>
-      </View>
-
-      {loading ? (
-        <View style={styles.loaderPage}>
-          <ActivityIndicator size="large" color={GREEN} />
-          <Text style={styles.loaderText}>Loading patients...</Text>
-        </View>
-      ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={GREEN}
-              colors={[GREEN]}
-            />
-          }
-          contentContainerStyle={{ paddingBottom: 35 }}
-        >
-          {/* HERO */}
-          <View style={styles.hero}>
-            <View style={styles.heroGlowOne} />
-            <View style={styles.heroGlowTwo} />
-
-            <View style={styles.heroBadge}>
-              <Ionicons name="people-outline" size={14} color={GOLD_LIGHT} />
-              <Text style={styles.heroBadgeText}>PATIENT DASHBOARD</Text>
-            </View>
-
-            <Text style={styles.heroTitle}>
-              Your patients,{"\n"}
-              <Text style={styles.heroGold}>one clear clinical view.</Text>
-            </Text>
-
-            <Text style={styles.heroText}>
-              Review registered and walk-in patients, medical records,
-              appointment history and active visits.
-            </Text>
-          </View>
-
-          {/* SUMMARY */}
-          <View style={styles.summaryGrid}>
-            <SummaryCard
-              icon="people-outline"
-              label="Total Patients"
-              value={summary.total}
-              background={MINT}
-              color={GREEN}
-            />
-            <SummaryCard
-              icon="calendar-outline"
-              label="Appointments"
-              value={summary.appointments}
-              background={SUCCESS_LIGHT}
-              color={SUCCESS}
-            />
-            <SummaryCard
-              icon="videocam-outline"
-              label="Consultations"
-              value={summary.consultations}
-              background={INFO_LIGHT}
-              color={INFO}
-            />
-            <SummaryCard
-              icon="pulse-outline"
-              label="Recent Interactions"
-              value={summary.recent}
-              background={WARNING_LIGHT}
-              color={WARNING}
-            />
-          </View>
-
-          {/* SEARCH + TABS */}
-          <View style={styles.filterCard}>
-            <View style={styles.searchWrap}>
-              <Ionicons name="search-outline" size={19} color={GOLD_DARK} />
-              <TextInput
-                value={search}
-                onChangeText={setSearch}
-                placeholder="Search name, phone, email or patient ID"
-                placeholderTextColor="#97A29B"
-                style={styles.searchInput}
-              />
-              {!!search && (
-                <TouchableOpacity onPress={() => setSearch("")}>
-                  <Ionicons name="close-circle" size={18} color={MUTED} />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <View style={styles.tabRow}>
-              {(["ALL", "REGISTERED", "WALK_IN"] as PatientView[]).map(
-                (view) => (
-                  <TouchableOpacity
-                    key={view}
-                    style={[
-                      styles.tabButton,
-                      patientView === view && styles.tabButtonActive,
-                    ]}
-                    onPress={() => setPatientView(view)}
-                  >
-                    <Text
-                      style={[
-                        styles.tabText,
-                        patientView === view && styles.tabTextActive,
-                      ]}
-                    >
-                      {view === "ALL"
-                        ? "All"
-                        : view === "REGISTERED"
-                        ? "Registered"
-                        : "Walk-in"}
-                    </Text>
-                  </TouchableOpacity>
-                )
-              )}
-            </View>
-
-            <TouchableOpacity
-              style={styles.moreFilterButton}
-              onPress={() => setFilterOpen(true)}
-            >
-              <Ionicons name="options-outline" size={17} color={GREEN} />
-              <Text style={styles.moreFilterText}>More Filters</Text>
-
-              {Boolean(gender || interactionDays) && (
-  <View style={styles.filterDot}>
-    <Text style={styles.filterDotText}>
-      {(gender ? 1 : 0) + (interactionDays ? 1 : 0)}
-    </Text>
-  </View>
-)}
-            </TouchableOpacity>
-          </View>
-
-          {/* PATIENT LIST */}
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionEyebrow}>MY PATIENTS</Text>
-              <Text style={styles.sectionTitle}>Patient Records</Text>
-            </View>
-
-            <View style={styles.resultBadge}>
-              <Text style={styles.resultText}>
-                {filteredPatients.length}{" "}
-                {filteredPatients.length === 1 ? "Patient" : "Patients"}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.patientList}>
-            {!filteredPatients.length ? (
-              <View style={styles.emptyCard}>
-                <View style={styles.emptyIcon}>
-                  <Ionicons name="person-remove-outline" size={28} color={GREEN} />
-                </View>
-                <Text style={styles.emptyTitle}>No patients found</Text>
-                <Text style={styles.emptyText}>
-                  Try changing the search or patient filters.
-                </Text>
-              </View>
-            ) : (
-              filteredPatients.map((patient) => (
-                <PatientCard
-                  key={`${patient.patientType}-${patient.id}`}
-                  patient={patient}
-                  onView={() =>
-                    patient.isWalkInPatient
-                      ? openWalkInPatient(patient)
-                      : openPatientRecord(patient)
-                  }
-                  onAppointments={() => openAppointmentHistory(patient)}
-                  onPrescription={() =>
-                    openPrescription(patient, patient.status === "WAITING")
-                  }
-                />
-              ))
-            )}
-          </View>
-        </ScrollView>
-      )}
-
-      {/* DRAWER */}
-      <Modal
-        visible={menuOpen}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={() => setMenuOpen(false)}
-      >
-        <View style={styles.drawerRoot}>
-          <Pressable
-            style={styles.backdrop}
-            onPress={() => setMenuOpen(false)}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={GREEN}
+            colors={[GREEN]}
           />
-
-          <View style={styles.drawer}>
-            <View style={styles.drawerBrandRow}>
-              <View style={styles.drawerLogo}>
-                <Ionicons name="medical" size={25} color={GOLD} />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.drawerBrand}>NeoLife</Text>
-                <Text style={styles.drawerPortal}>Doctor Portal</Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.drawerClose}
-                onPress={() => setMenuOpen(false)}
-              >
-                <Ionicons name="close" size={22} color={GREEN} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.drawerDoctor}>
-              <View style={styles.drawerAvatar}>
-                <Text style={styles.drawerAvatarText}>{doctorInitial}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.drawerDoctorName} numberOfLines={1}>
-                  {doctorName}
-                </Text>
-                <Text style={styles.drawerDoctorRole}>Doctor</Text>
-              </View>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {(["MAIN", "CLINICAL", "FINANCE"] as const).map((section) => (
-                <View key={section} style={styles.drawerSection}>
-                  <Text style={styles.drawerSectionLabel}>{section}</Text>
-
-                  {MENU_ITEMS.filter(
-                    (item) =>
-                      item[3] === section && visibleMenuItem(item[1])
-                  ).map(([icon, label, route]) => {
-                    const active = label === "Patients";
-
-                    return (
-                      <TouchableOpacity
-                        key={label}
-                        style={[
-                          styles.drawerItem,
-                          active && styles.drawerItemActive,
-                        ]}
-                        onPress={() => {
-                          setMenuOpen(false);
-                          if (!active) router.push(route as any);
-                        }}
-                      >
-                        <View
-                          style={[
-                            styles.drawerItemIcon,
-                            active && styles.drawerItemIconActive,
-                          ]}
-                        >
-                          <Ionicons
-                            name={icon as any}
-                            size={19}
-                            color={active ? GREEN : GOLD}
-                          />
-                        </View>
-
-                        <Text
-                          style={[
-                            styles.drawerItemText,
-                            active && styles.drawerItemTextActive,
-                          ]}
-                        >
-                          {label}
-                        </Text>
-
-                        <Ionicons
-                          name="chevron-forward"
-                          size={16}
-                          color={active ? GREEN : "#AFC0B6"}
-                        />
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              ))}
-            </ScrollView>
-
-            <TouchableOpacity
-              style={styles.logoutButton}
-              onPress={() => {
-                setMenuOpen(false);
-                setLogoutOpen(true);
-              }}
-            >
-              <Ionicons name="log-out-outline" size={20} color={WHITE} />
-              <Text style={styles.logoutText}>Logout</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* FILTER MODAL */}
-      <Modal
-        visible={filterOpen}
-        transparent
-        animationType="slide"
-        statusBarTranslucent
-        onRequestClose={() => setFilterOpen(false)}
-      >
-        <View style={styles.sheetRoot}>
-          <Pressable style={styles.backdrop} onPress={() => setFilterOpen(false)} />
-
-          <View style={styles.filterSheet}>
-            <View style={styles.sheetHandle} />
-
-            <View style={styles.sheetHeader}>
-              <View>
-                <Text style={styles.sheetEyebrow}>REFINE PATIENT LIST</Text>
-                <Text style={styles.sheetTitle}>Patient Filters</Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.sheetClose}
-                onPress={() => setFilterOpen(false)}
-              >
-                <Ionicons name="close" size={21} color={GREEN} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.fieldLabel}>GENDER</Text>
-            <View style={styles.optionRow}>
-              {[
-                ["", "All"],
-                ["MALE", "Male"],
-                ["FEMALE", "Female"],
-                ["OTHER", "Other"],
-              ].map(([value, label]) => (
-                <TouchableOpacity
-                  key={label}
-                  style={[
-                    styles.optionChip,
-                    gender === value && styles.optionChipActive,
-                  ]}
-                  onPress={() => setGender(value as GenderFilter)}
-                >
-                  <Text
-                    style={[
-                      styles.optionChipText,
-                      gender === value && styles.optionChipTextActive,
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.fieldLabel}>LAST INTERACTION</Text>
-            <View style={styles.optionRow}>
-              {[
-                [0, "Any Time"],
-                [7, "7 Days"],
-                [30, "30 Days"],
-                [90, "3 Months"],
-              ].map(([value, label]) => (
-                <TouchableOpacity
-                  key={String(value)}
-                  style={[
-                    styles.optionChip,
-                    interactionDays === value && styles.optionChipActive,
-                  ]}
-                  onPress={() =>
-                    setInteractionDays(Number(value) as InteractionFilter)
-                  }
-                >
-                  <Text
-                    style={[
-                      styles.optionChipText,
-                      interactionDays === value && styles.optionChipTextActive,
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.filterActions}>
-              <TouchableOpacity
-                style={styles.clearButton}
-                onPress={() => {
-                  setGender("");
-                  setInteractionDays(0);
-                }}
-              >
-                <Text style={styles.clearButtonText}>Clear</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.applyButton}
-                onPress={() => setFilterOpen(false)}
-              >
-                <Text style={styles.applyButtonText}>Apply Filters</Text>
-                <Ionicons name="checkmark" size={18} color={GREEN} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* PATIENT RECORD / WALK-IN / APPOINTMENTS */}
-      <Modal
-        visible={recordOpen}
-        transparent
-        animationType="slide"
-        statusBarTranslucent
-        onRequestClose={() => setRecordOpen(false)}
-      >
-        <View style={styles.sheetRoot}>
-          <Pressable style={styles.backdrop} onPress={() => setRecordOpen(false)} />
-
-          <View style={styles.recordSheet}>
-            <View style={styles.sheetHandle} />
-
-            <View style={styles.sheetHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sheetEyebrow}>
-                  {recordMode === "WALK_IN"
-                    ? "WALK-IN PATIENT"
-                    : recordMode === "APPOINTMENTS"
-                    ? "APPOINTMENT HISTORY"
-                    : "MEDICAL RECORD"}
-                </Text>
-                <Text style={styles.sheetTitle} numberOfLines={1}>
-                  {selectedPatient?.name || "Patient"}
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.sheetClose}
-                onPress={() => setRecordOpen(false)}
-              >
-                <Ionicons name="close" size={21} color={GREEN} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 24 }}
-            >
-              {recordLoading ? (
-                <View style={styles.recordLoader}>
-                  <ActivityIndicator size="large" color={GREEN} />
-                  <Text style={styles.loaderText}>Loading patient record...</Text>
-                </View>
-              ) : recordMode === "WALK_IN" && selectedPatient ? (
-                <WalkInDetails
-                  patient={selectedPatient}
-                  onAction={() =>
-                    openPrescription(
-                      selectedPatient,
-                      selectedPatient.status === "WAITING"
-                    )
-                  }
-                />
-              ) : recordMode === "APPOINTMENTS" ? (
-                <AppointmentHistory items={appointmentHistory} />
-              ) : (
-                <MedicalRecordView
-                  record={medicalRecord}
-                  fallbackPatient={selectedPatient}
-                />
-              )}
-
-              {recordMode === "RECORD" && selectedPatient && !recordLoading && (
-                <TouchableOpacity
-                  style={styles.recordPrimaryButton}
-                  onPress={() => openAppointmentHistory(selectedPatient)}
-                >
-                  <Ionicons name="calendar-outline" size={18} color={GREEN} />
-                  <Text style={styles.recordPrimaryButtonText}>
-                    View Appointment History
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* LOGOUT */}
-      <Modal
-        visible={logoutOpen}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={() => setLogoutOpen(false)}
-      >
-        <View style={styles.centerModal}>
-          <Pressable style={styles.backdrop} onPress={() => setLogoutOpen(false)} />
-          <View style={styles.confirmCard}>
-            <View style={styles.confirmIcon}>
-              <Ionicons name="log-out-outline" size={31} color={GREEN} />
-            </View>
-            <Text style={styles.noticeEyebrow}>NEOLIFE DOCTOR PORTAL</Text>
-            <Text style={styles.noticeTitle}>Log Out?</Text>
-            <Text style={styles.noticeMessage}>
-              Are you sure you want to leave the doctor portal?
-            </Text>
-            <View style={styles.confirmActions}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => setLogoutOpen(false)}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.confirmButton} onPress={logout}>
-                <Text style={styles.confirmText}>Logout</Text>
-                <Ionicons name="arrow-forward" size={17} color={GREEN} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* STYLED NOTICE */}
-      <Modal
-        visible={notice.visible}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={() =>
-          setNotice((current) => ({ ...current, visible: false }))
         }
+        contentContainerStyle={styles.content}
       >
-        <View style={styles.centerModal}>
-          <Pressable
-            style={styles.backdrop}
-            onPress={() =>
-              setNotice((current) => ({ ...current, visible: false }))
+        <View style={styles.hero}>
+          <View style={styles.heroIcon}>
+            <Ionicons name="people-outline" size={25} color="#F5EBC9" />
+          </View>
+
+          <Text style={styles.eyebrow}>PATIENT CARE</Text>
+          <Text style={styles.heroTitle}>Registered Patients</Text>
+
+          <Text style={styles.heroText}>
+            Review patient history, appointments, consultations,
+            prescriptions, therapies and clinical notes.
+          </Text>
+
+          <TouchableOpacity
+            style={styles.refreshButton}
+            onPress={onRefresh}
+          >
+            <Ionicons name="refresh-outline" size={17} color={WHITE} />
+            <Text style={styles.refreshText}>Refresh</Text>
+          </TouchableOpacity>
+        </View>
+
+        {notice.visible && (
+          <NoticeCard
+            notice={notice}
+            onClose={() =>
+              setNotice((current) => ({
+                ...current,
+                visible: false,
+              }))
             }
           />
+        )}
 
-          <View style={styles.noticeCard}>
-            <View
-              style={[
-                styles.noticeIcon,
-                notice.type === "success"
-                  ? { backgroundColor: SUCCESS_LIGHT }
-                  : notice.type === "error"
-                  ? { backgroundColor: DANGER_LIGHT }
-                  : notice.type === "warning"
-                  ? { backgroundColor: WARNING_LIGHT }
-                  : { backgroundColor: INFO_LIGHT },
-              ]}
-            >
-              <Ionicons
-                name={
-                  notice.type === "success"
-                    ? "checkmark-circle-outline"
-                    : notice.type === "error"
-                    ? "close-circle-outline"
-                    : notice.type === "warning"
-                    ? "alert-circle-outline"
-                    : "information-circle-outline"
-                }
-                size={32}
-                color={
-                  notice.type === "success"
-                    ? SUCCESS
-                    : notice.type === "error"
-                    ? DANGER
-                    : notice.type === "warning"
-                    ? WARNING
-                    : INFO
+        <View style={styles.summaryGrid}>
+          <SummaryCard
+            icon="people-outline"
+            label="Patients"
+            value={summary.patients}
+          />
+
+          <SummaryCard
+            icon="calendar-outline"
+            label="Appointments"
+            value={summary.appointments}
+          />
+
+          <SummaryCard
+            icon="videocam-outline"
+            label="Consultations"
+            value={summary.consultations}
+          />
+
+          <SummaryCard
+            icon="time-outline"
+            label="Recent 30 Days"
+            value={summary.recent}
+          />
+        </View>
+
+        <View style={styles.searchRow}>
+          <View style={styles.searchBox}>
+            <Ionicons name="search-outline" size={18} color={MUTED} />
+
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Name, phone, email or patient ID"
+              placeholderTextColor="#9AA59E"
+              style={styles.searchInput}
+            />
+
+            {!!search && (
+              <TouchableOpacity onPress={() => setSearch("")}>
+                <Ionicons
+                  name="close-circle"
+                  size={18}
+                  color={MUTED}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.filterButton,
+              Boolean(gender || interactionDays) &&
+                styles.filterButtonActive,
+            ]}
+            onPress={() => setFilterOpen(true)}
+          >
+            <Ionicons
+              name="options-outline"
+              size={20}
+              color={
+                gender || interactionDays ? WHITE : GREEN
+              }
+            />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionEyebrow}>
+              REGISTERED PATIENTS
+            </Text>
+            <Text style={styles.sectionTitle}>Patient Directory</Text>
+            <Text style={styles.sectionSub}>
+              {filteredPatients.length} matching patient(s)
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.list}>
+          {visiblePatients.length ? (
+            visiblePatients.map((patient) => (
+              <PatientCard
+                key={String(patient.id)}
+                patient={patient}
+                onRecord={() => openPatientRecord(patient)}
+                onPrescription={() =>
+                  openRegisteredPrescription(patient)
                 }
               />
+            ))
+          ) : (
+            <View style={styles.emptyCard}>
+              <Ionicons
+                name="people-outline"
+                size={32}
+                color={GOLD_DARK}
+              />
+              <Text style={styles.emptyTitle}>
+                No registered patients found
+              </Text>
+              <Text style={styles.emptyText}>
+                Try changing the search or filter options.
+              </Text>
             </View>
+          )}
+        </View>
 
-            <Text style={styles.noticeEyebrow}>NEOLIFE DOCTOR PORTAL</Text>
-            <Text style={styles.noticeTitle}>{notice.title}</Text>
-            <Text style={styles.noticeMessage}>{notice.message}</Text>
+        <View style={styles.pagination}>
+          <Text style={styles.paginationText}>
+            {filteredPatients.length
+              ? `Showing ${
+                  (safePage - 1) * PAGE_SIZE + 1
+                }-${Math.min(
+                  safePage * PAGE_SIZE,
+                  filteredPatients.length
+                )} of ${filteredPatients.length}`
+              : "Showing 0 patients"}
+          </Text>
 
+          <View style={styles.pageButtons}>
             <TouchableOpacity
-              style={styles.noticeButton}
+              style={[
+                styles.pageButton,
+                safePage === 1 && styles.pageDisabled,
+              ]}
+              disabled={safePage === 1}
               onPress={() =>
-                setNotice((current) => ({ ...current, visible: false }))
+                setPage((value) => Math.max(1, value - 1))
               }
             >
-              <Text style={styles.noticeButtonText}>Okay</Text>
-              <Ionicons name="checkmark" size={18} color={GREEN} />
+              <Ionicons
+                name="chevron-back"
+                size={18}
+                color={GREEN}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.currentPage}>
+              <Text style={styles.currentPageText}>
+                {safePage}
+              </Text>
+            </View>
+
+            <Text style={styles.pageOf}>of {pageCount}</Text>
+
+            <TouchableOpacity
+              style={[
+                styles.pageButton,
+                safePage === pageCount && styles.pageDisabled,
+              ]}
+              disabled={safePage === pageCount}
+              onPress={() =>
+                setPage((value) =>
+                  Math.min(pageCount, value + 1)
+                )
+              }
+            >
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={GREEN}
+              />
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </ScrollView>
+
+      <FilterSheet
+        visible={filterOpen}
+        gender={gender}
+        interactionDays={interactionDays}
+        onClose={() => setFilterOpen(false)}
+        setGender={setGender}
+        setInteractionDays={setInteractionDays}
+        onReset={() => {
+          setGender("");
+          setInteractionDays(0);
+          setSearch("");
+        }}
+      />
+
+      <PatientRecordModal
+        visible={recordOpen}
+        patient={selectedPatient}
+        record={medicalRecord}
+        loading={recordLoading}
+        onClose={() => {
+          setRecordOpen(false);
+          setSelectedPatient(null);
+          setMedicalRecord(null);
+        }}
+        onPrescription={viewPrescription}
+      />
+
+      <PrescriptionListModal
+        visible={prescriptionListOpen}
+        patient={prescriptionListPatient}
+        prescriptions={prescriptionList}
+        loading={prescriptionListLoading}
+        onClose={() => {
+          setPrescriptionListOpen(false);
+          setPrescriptionListPatient(null);
+          setPrescriptionList([]);
+        }}
+        onSelect={async (prescription) => {
+          await viewPrescription(prescription);
+        }}
+      />
+
+      <PrescriptionModal
+        prescription={prescriptionView}
+        loading={prescriptionLoading}
+        error={prescriptionError}
+        onClose={() => {
+          setPrescriptionView(null);
+          setPrescriptionError("");
+        }}
+      />
+
+      <DoctorDrawer
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        activeRoute="/doctor/patients"
+      />
     </View>
+  );
+}
+
+function PatientCard({
+  patient,
+  onRecord,
+  onPrescription,
+}: {
+  patient: Patient;
+  onRecord: () => void;
+  onPrescription: () => void;
+}) {
+  return (
+    <View style={styles.patientCard}>
+      <View style={styles.patientTop}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>
+            {patient.name.charAt(0).toUpperCase()}
+          </Text>
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <Text style={styles.patientName}>{patient.name}</Text>
+          <Text style={styles.patientCode}>
+            {patient.code} · {patient.phone}
+          </Text>
+        </View>
+
+        <View style={styles.registeredBadge}>
+          <Text style={styles.registeredBadgeText}>
+            REGISTERED
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.infoGrid}>
+        <InfoItem
+          icon="person-outline"
+          label="Age / Gender"
+          value={`${patient.age} / ${titleCase(patient.gender)}`}
+        />
+
+        <InfoItem
+          icon="calendar-outline"
+          label="Appointments"
+          value={String(patient.totalAppointments)}
+        />
+
+        <InfoItem
+          icon="videocam-outline"
+          label="Consultations"
+          value={String(patient.totalConsultations)}
+        />
+
+        <InfoItem
+          icon="time-outline"
+          label="Last Interaction"
+          value={formatDate(patient.lastInteractionAt)}
+        />
+      </View>
+
+      {!!patient.email && patient.email !== "—" && (
+        <View style={styles.emailBox}>
+          <Ionicons name="mail-outline" size={16} color={MUTED} />
+          <Text style={styles.emailText}>{patient.email}</Text>
+        </View>
+      )}
+
+      <View style={styles.cardActions}>
+        <TouchableOpacity
+          style={styles.recordButton}
+          onPress={onRecord}
+        >
+          <Ionicons name="folder-open-outline" size={17} color={GREEN} />
+          <Text style={styles.recordButtonText}>
+            View Record
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.prescriptionButton}
+          onPress={onPrescription}
+        >
+          <Ionicons
+            name="document-text-outline"
+            size={17}
+            color={INFO}
+          />
+          <Text style={styles.prescriptionButtonText}>
+            View Prescriptions
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function PatientRecordModal({
+  visible,
+  patient,
+  record,
+  loading,
+  onClose,
+  onPrescription,
+}: {
+  visible: boolean;
+  patient: Patient | null;
+  record: any;
+  loading: boolean;
+  onClose: () => void;
+  onPrescription: (prescription: any) => void;
+}) {
+  if (!visible || !patient) return null;
+
+  const patientData =
+    record?.patient ||
+    record?.patientDetails ||
+    record?.selectedPatient ||
+    {};
+
+  const appointments = Array.isArray(record?.appointments)
+    ? record.appointments
+    : [];
+
+  const consultations = Array.isArray(record?.consultations)
+    ? record.consultations
+    : [];
+
+  const prescriptions = Array.isArray(record?.prescriptions)
+    ? record.prescriptions
+    : [];
+
+  const therapies = Array.isArray(record?.therapies)
+    ? record.therapies
+    : Array.isArray(record?.treatmentPlans)
+    ? record.treatmentPlans
+    : [];
+
+  const notes = Array.isArray(record?.notes)
+    ? record.notes
+    : [];
+
+  return (
+    <Modal
+      visible
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.recordScreen}>
+        <View style={styles.recordHeader}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={onClose}
+          >
+            <Ionicons name="arrow-back" size={20} color={GREEN} />
+          </TouchableOpacity>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.recordEyebrow}>
+              COMPLETE PATIENT RECORD
+            </Text>
+            <Text style={styles.recordTitle}>
+              {patientData?.name ||
+                patientData?.patientName ||
+                patient.name}
+            </Text>
+            <Text style={styles.recordSub}>
+              Patient #{patient.id}
+            </Text>
+          </View>
+        </View>
+
+        {loading ? (
+          <View style={styles.modalLoader}>
+            <ActivityIndicator size="large" color={GREEN} />
+            <Text style={styles.loaderText}>
+              Loading patient medical record...
+            </Text>
+          </View>
+        ) : (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.recordBody}
+          >
+            <RecordSection title="Patient Profile">
+              <View style={styles.detailGrid}>
+                <Detail
+                  label="Patient"
+                  value={
+                    patientData?.name ||
+                    patientData?.patientName ||
+                    patient.name
+                  }
+                />
+
+                <Detail
+                  label="Phone"
+                  value={
+                    patientData?.phoneNumber ||
+                    patientData?.phone ||
+                    patient.phone
+                  }
+                />
+
+                <Detail
+                  label="Email"
+                  value={patientData?.email || patient.email}
+                />
+
+                <Detail
+                  label="Age / Gender"
+                  value={`${
+                    patientData?.age ?? patient.age
+                  } / ${titleCase(
+                    patientData?.gender || patient.gender
+                  )}`}
+                />
+              </View>
+            </RecordSection>
+
+            <HistorySection
+              title="Appointments"
+              icon="calendar-outline"
+              records={appointments}
+              render={(item) => ({
+                title: `${formatDate(
+                  item?.appointmentDate
+                )} · ${formatTime(item?.startTime)}`,
+                subtitle: `${titleCase(
+                  item?.appointmentMode || "OFFLINE"
+                )} · ${titleCase(item?.status)}`,
+                meta:
+                  item?.symptoms ||
+                  item?.pastMedicalHistory ||
+                  "",
+              })}
+            />
+
+            <HistorySection
+              title="Consultations"
+              icon="videocam-outline"
+              records={consultations}
+              render={(item) => ({
+                title: `${formatDate(
+                  item?.consultationDate
+                )} · ${formatTime(item?.startTime)}`,
+                subtitle: `Online · ${titleCase(item?.status)}`,
+                meta: item?.symptoms || "",
+              })}
+            />
+
+            <HistorySection
+              title="Prescriptions"
+              icon="document-text-outline"
+              records={prescriptions}
+              onPress={onPrescription}
+              render={(item) => ({
+                title: item?.diagnosis || `Prescription #${item?.id}`,
+                subtitle: `${titleCase(item?.status)}${
+                  item?.createdAt
+                    ? ` · ${formatDate(
+                        String(item.createdAt).slice(0, 10)
+                      )}`
+                    : ""
+                }`,
+                meta: item?.advice || "",
+              })}
+            />
+
+            <HistorySection
+              title="Therapies"
+              icon="medkit-outline"
+              records={therapies}
+              render={(item) => ({
+                title:
+                  item?.treatmentName ||
+                  item?.therapyName ||
+                  item?.serviceName ||
+                  "Therapy",
+                subtitle: titleCase(item?.status),
+                meta:
+                  item?.diagnosis ||
+                  item?.instructions ||
+                  "",
+              })}
+            />
+
+            <HistorySection
+              title="Doctor Notes"
+              icon="clipboard-outline"
+              records={notes}
+              render={(item) => ({
+                title: item?.title || "Clinical Note",
+                subtitle:
+                  item?.doctorName ||
+                  item?.createdByName ||
+                  "",
+                meta:
+                  item?.note ||
+                  item?.content ||
+                  item?.notes ||
+                  "",
+              })}
+            />
+          </ScrollView>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
+function PrescriptionListModal({
+  visible,
+  patient,
+  prescriptions,
+  loading,
+  onClose,
+  onSelect,
+}: {
+  visible: boolean;
+  patient: Patient | null;
+  prescriptions: any[];
+  loading: boolean;
+  onClose: () => void;
+  onSelect: (prescription: any) => void;
+}) {
+  if (!visible || !patient) return null;
+
+  return (
+    <Modal
+      visible
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.recordScreen}>
+        <View style={styles.recordHeader}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={onClose}
+          >
+            <Ionicons name="arrow-back" size={20} color={GREEN} />
+          </TouchableOpacity>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.recordEyebrow}>
+              PATIENT PRESCRIPTIONS
+            </Text>
+            <Text style={styles.recordTitle}>
+              {patient.name}
+            </Text>
+            <Text style={styles.recordSub}>
+              Patient #{patient.id} · {prescriptions.length} prescription(s)
+            </Text>
+          </View>
+        </View>
+
+        {loading ? (
+          <View style={styles.modalLoader}>
+            <ActivityIndicator size="large" color={GREEN} />
+            <Text style={styles.loaderText}>
+              Loading prescriptions...
+            </Text>
+          </View>
+        ) : (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.recordBody}
+          >
+            <RecordSection title={`Prescriptions (${prescriptions.length})`}>
+              {prescriptions.length ? (
+                prescriptions.map((item: any, index: number) => (
+                  <TouchableOpacity
+                    key={String(item?.id ?? index)}
+                    style={styles.historyCard}
+                    onPress={() => onSelect(item)}
+                  >
+                    <View style={styles.historyIcon}>
+                      <Ionicons
+                        name="document-text-outline"
+                        size={18}
+                        color={GREEN}
+                      />
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.historyTitle}>
+                        Prescription #{item?.id}
+                      </Text>
+
+                      <Text style={styles.historySubtitle}>
+                        {item?.diagnosis || "Prescription"}
+                      </Text>
+
+                      <Text style={styles.historyMeta}>
+                        {titleCase(item?.status)}
+                        {item?.appointmentId
+                          ? ` · Appointment #${item.appointmentId}`
+                          : item?.consultationId
+                          ? ` · Consultation #${item.consultationId}`
+                          : ""}
+                        {item?.createdAt
+                          ? ` · ${formatDate(
+                              String(item.createdAt).slice(0, 10)
+                            )}`
+                          : ""}
+                      </Text>
+                    </View>
+
+                    <View style={styles.viewRxBadge}>
+                      <Text style={styles.viewRxBadgeText}>View</Text>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={15}
+                        color={INFO}
+                      />
+                    </View>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={styles.noPrescriptionBox}>
+                  <Ionicons
+                    name="document-text-outline"
+                    size={30}
+                    color={GOLD_DARK}
+                  />
+                  <Text style={styles.emptyTitle}>
+                    No prescriptions found
+                  </Text>
+                  <Text style={styles.emptyText}>
+                    No prescription has been created for this registered patient yet.
+                  </Text>
+                </View>
+              )}
+            </RecordSection>
+          </ScrollView>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
+function PrescriptionModal({
+  prescription,
+  loading,
+  error,
+  onClose,
+}: {
+  prescription: any | null;
+  loading: boolean;
+  error: string;
+  onClose: () => void;
+}) {
+  if (!prescription && !loading) return null;
+
+  const data = prescription || {};
+
+  const medicines = Array.isArray(data?.items)
+    ? data.items
+    : Array.isArray(data?.medicines)
+    ? data.medicines
+    : Array.isArray(data?.prescriptionItems)
+    ? data.prescriptionItems
+    : [];
+
+  return (
+    <Modal
+      visible
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.recordScreen}>
+        <View style={styles.recordHeader}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={onClose}
+          >
+            <Ionicons name="arrow-back" size={20} color={GREEN} />
+          </TouchableOpacity>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.recordEyebrow}>
+              PRESCRIPTION DETAILS
+            </Text>
+            <Text style={styles.recordTitle}>
+              Prescription #{data?.id || "—"}
+            </Text>
+            <Text style={styles.recordSub}>
+              {titleCase(data?.status)}
+            </Text>
+          </View>
+        </View>
+
+        {loading ? (
+          <View style={styles.modalLoader}>
+            <ActivityIndicator size="large" color={GREEN} />
+            <Text style={styles.loaderText}>
+              Loading prescription...
+            </Text>
+          </View>
+        ) : error ? (
+          <View style={styles.modalLoader}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={38}
+              color={DANGER}
+            />
+            <Text style={styles.emptyTitle}>
+              Unable to load prescription
+            </Text>
+            <Text style={styles.emptyText}>{error}</Text>
+          </View>
+        ) : (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.recordBody}
+          >
+            <RecordSection title="Prescription Summary">
+              <View style={styles.detailGrid}>
+                <Detail
+                  label="Patient"
+                  value={data?.patientName || "—"}
+                />
+
+                <Detail
+                  label="Doctor"
+                  value={data?.doctorName || "—"}
+                />
+
+                <Detail
+                  label="Status"
+                  value={titleCase(data?.status)}
+                />
+
+                <Detail
+                  label="Finalized"
+                  value={
+                    data?.finalizedAt
+                      ? formatDate(
+                          String(data.finalizedAt).slice(0, 10)
+                        )
+                      : "Not finalized"
+                  }
+                />
+
+                <Detail
+                  wide
+                  label="Diagnosis"
+                  value={data?.diagnosis || "—"}
+                />
+
+                <Detail
+                  wide
+                  label="Advice"
+                  value={data?.advice || "—"}
+                />
+
+                <Detail
+                  wide
+                  label="Additional Notes"
+                  value={data?.notes || "—"}
+                />
+              </View>
+            </RecordSection>
+
+            <RecordSection
+              title={`Medicines (${medicines.length})`}
+            >
+              {medicines.length ? (
+                medicines.map((medicine: any, index: number) => (
+                  <View
+                    style={styles.medicineCard}
+                    key={String(
+                      medicine?.id ??
+                        medicine?.productId ??
+                        index
+                    )}
+                  >
+                    <Text style={styles.medicineName}>
+                      {index + 1}.{" "}
+                      {medicine?.medicineName ||
+                        medicine?.productName ||
+                        medicine?.name ||
+                        "Medicine"}
+                    </Text>
+
+                    <View style={styles.detailGrid}>
+                      <Detail
+                        label="Dosage"
+                        value={medicine?.dosage || "—"}
+                      />
+
+                      <Detail
+                        label="Frequency"
+                        value={medicine?.frequency || "—"}
+                      />
+
+                      <Detail
+                        label="Duration"
+                        value={
+                          medicine?.durationDays != null
+                            ? `${medicine.durationDays} days`
+                            : medicine?.duration || "—"
+                        }
+                      />
+
+                      <Detail
+                        label="Quantity"
+                        value={String(
+                          medicine?.quantity ?? "—"
+                        )}
+                      />
+
+                      <Detail
+                        wide
+                        label="Instructions"
+                        value={
+                          medicine?.instructions ||
+                          medicine?.instruction ||
+                          "—"
+                        }
+                      />
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.emptyText}>
+                  No medicine items were added.
+                </Text>
+              )}
+            </RecordSection>
+          </ScrollView>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
+function FilterSheet({
+  visible,
+  gender,
+  interactionDays,
+  setGender,
+  setInteractionDays,
+  onClose,
+  onReset,
+}: {
+  visible: boolean;
+  gender: GenderFilter;
+  interactionDays: InteractionFilter;
+  setGender: (value: GenderFilter) => void;
+  setInteractionDays: (value: InteractionFilter) => void;
+  onClose: () => void;
+  onReset: () => void;
+}) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.backdrop} onPress={onClose} />
+
+        <View style={styles.filterSheet}>
+          <View style={styles.sheetHandle} />
+
+          <Text style={styles.sheetEyebrow}>
+            REFINE PATIENTS
+          </Text>
+          <Text style={styles.sheetTitle}>Patient Filters</Text>
+
+          <Text style={styles.filterLabel}>GENDER</Text>
+
+          <View style={styles.optionsWrap}>
+            {[
+              { value: "", label: "All" },
+              { value: "MALE", label: "Male" },
+              { value: "FEMALE", label: "Female" },
+              { value: "OTHER", label: "Other" },
+            ].map((option) => {
+              const active = gender === option.value;
+
+              return (
+                <TouchableOpacity
+                  key={option.label}
+                  style={[
+                    styles.optionButton,
+                    active && styles.optionButtonActive,
+                  ]}
+                  onPress={() =>
+                    setGender(option.value as GenderFilter)
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.optionText,
+                      active && styles.optionTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={styles.filterLabel}>
+            LAST INTERACTION
+          </Text>
+
+          <View style={styles.optionsWrap}>
+            {[
+              { value: 0, label: "Any time" },
+              { value: 7, label: "7 days" },
+              { value: 30, label: "30 days" },
+              { value: 90, label: "90 days" },
+            ].map((option) => {
+              const active =
+                interactionDays === option.value;
+
+              return (
+                <TouchableOpacity
+                  key={option.label}
+                  style={[
+                    styles.optionButton,
+                    active && styles.optionButtonActive,
+                  ]}
+                  onPress={() =>
+                    setInteractionDays(
+                      option.value as InteractionFilter
+                    )
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.optionText,
+                      active && styles.optionTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.filterActions}>
+            <TouchableOpacity
+              style={styles.resetButton}
+              onPress={onReset}
+            >
+              <Text style={styles.resetButtonText}>Reset</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.applyButton}
+              onPress={onClose}
+            >
+              <Text style={styles.applyButtonText}>
+                Apply Filters
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1290,148 +1742,19 @@ function SummaryCard({
   icon,
   label,
   value,
-  background,
-  color,
 }: {
-  icon: any;
+  icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: number;
-  background: string;
-  color: string;
 }) {
   return (
     <View style={styles.summaryCard}>
-      <View style={[styles.summaryIcon, { backgroundColor: background }]}>
-        <Ionicons name={icon} size={21} color={color} />
+      <View style={styles.summaryIcon}>
+        <Ionicons name={icon} size={20} color={GREEN_2} />
       </View>
+
       <Text style={styles.summaryLabel}>{label}</Text>
       <Text style={styles.summaryValue}>{value}</Text>
-    </View>
-  );
-}
-
-function PatientCard({
-  patient,
-  onView,
-  onAppointments,
-  onPrescription,
-}: {
-  patient: Patient;
-  onView: () => void;
-  onAppointments: () => void;
-  onPrescription: () => void;
-}) {
-  const walkIn = patient.isWalkInPatient;
-
-  return (
-    <View style={styles.patientCard}>
-      <View style={styles.patientTop}>
-        <View
-          style={[
-            styles.patientAvatar,
-            walkIn && { backgroundColor: GOLD },
-          ]}
-        >
-          <Text
-            style={[
-              styles.patientAvatarText,
-              walkIn && { color: GREEN },
-            ]}
-          >
-            {patient.name.charAt(0).toUpperCase()}
-          </Text>
-        </View>
-
-        <View style={{ flex: 1 }}>
-          <Text style={styles.patientName}>{patient.name}</Text>
-          <Text style={styles.patientCode}>{patient.code}</Text>
-        </View>
-
-        <View
-          style={[
-            styles.typeBadge,
-            walkIn ? styles.walkInBadge : styles.registeredBadge,
-          ]}
-        >
-          <Text
-            style={[
-              styles.typeBadgeText,
-              { color: walkIn ? GOLD_DARK : SUCCESS },
-            ]}
-          >
-            {walkIn ? "WALK-IN" : "REGISTERED"}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.patientInfoGrid}>
-        <InfoItem icon="call-outline" label="Phone" value={patient.phone} />
-        <InfoItem
-          icon="person-outline"
-          label="Age / Gender"
-          value={`${patient.age} / ${formatLabel(patient.gender)}`}
-        />
-        <InfoItem
-          icon="calendar-outline"
-          label="Visit Date"
-          value={formatDate(patient.visitDate)}
-        />
-        <InfoItem
-          icon="time-outline"
-          label="Visit Time"
-          value={formatTime(patient.visitTime)}
-        />
-      </View>
-
-      <View style={styles.patientBottom}>
-        <StatusBadge status={patient.status} />
-
-        {!walkIn && (
-          <Text style={styles.interactionText}>
-            {patient.totalInteractions} interaction
-            {patient.totalInteractions === 1 ? "" : "s"}
-          </Text>
-        )}
-      </View>
-
-      <View style={styles.cardActions}>
-        <TouchableOpacity style={styles.viewButton} onPress={onView}>
-          <Ionicons
-            name={walkIn ? "eye-outline" : "document-text-outline"}
-            size={17}
-            color={GREEN}
-          />
-          <Text style={styles.viewButtonText}>
-            {walkIn ? "View Details" : "Medical Record"}
-          </Text>
-        </TouchableOpacity>
-
-        {walkIn ? (
-          <TouchableOpacity style={styles.goldButton} onPress={onPrescription}>
-            <Ionicons
-              name={
-                patient.status === "WAITING"
-                  ? "play-outline"
-                  : "document-text-outline"
-              }
-              size={17}
-              color={GREEN}
-            />
-            <Text style={styles.goldButtonText}>
-              {patient.status === "WAITING"
-                ? "Start Visit"
-                : patient.status === "IN_PROGRESS"
-                ? "Continue"
-                : "Prescription"}
-            </Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.goldButton} onPress={onAppointments}>
-            <Ionicons name="calendar-outline" size={17} color={GREEN} />
-            <Text style={styles.goldButtonText}>Appointments</Text>
-          </TouchableOpacity>
-        )}
-      </View>
     </View>
   );
 }
@@ -1441,1330 +1764,1007 @@ function InfoItem({
   label,
   value,
 }: {
-  icon: any;
+  icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
 }) {
   return (
     <View style={styles.infoItem}>
-      <Ionicons name={icon} size={15} color={GOLD_DARK} />
+      <Ionicons name={icon} size={16} color={GOLD_DARK} />
+
       <View style={{ flex: 1 }}>
-        <Text style={styles.infoLabel}>{label.toUpperCase()}</Text>
-        <Text style={styles.infoValue} numberOfLines={1}>
-          {value || "-"}
+        <Text style={styles.infoLabel}>
+          {label.toUpperCase()}
+        </Text>
+
+        <Text style={styles.infoValue}>
+          {value || "—"}
         </Text>
       </View>
     </View>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const normalized = String(status || "").toUpperCase();
-
-  const color =
-    normalized === "COMPLETED"
-      ? SUCCESS
-      : normalized === "IN_PROGRESS"
-      ? INFO
-      : normalized === "WAITING"
-      ? WARNING
-      : GREEN;
-
-  const background =
-    normalized === "COMPLETED"
-      ? SUCCESS_LIGHT
-      : normalized === "IN_PROGRESS"
-      ? INFO_LIGHT
-      : normalized === "WAITING"
-      ? WARNING_LIGHT
-      : MINT;
-
-  return (
-    <View style={[styles.statusBadge, { backgroundColor: background }]}>
-      <Text style={[styles.statusText, { color }]}>
-        {formatLabel(normalized)}
-      </Text>
-    </View>
-  );
-}
-
-function WalkInDetails({
-  patient,
-  onAction,
+function NoticeCard({
+  notice,
+  onClose,
 }: {
-  patient: Patient;
-  onAction: () => void;
+  notice: Notice;
+  onClose: () => void;
 }) {
+  const palette =
+    notice.type === "error"
+      ? {
+          background: DANGER_LIGHT,
+          border: "#EFC2BC",
+          color: DANGER,
+          icon: "alert-circle-outline" as const,
+        }
+      : notice.type === "warning"
+      ? {
+          background: WARNING_LIGHT,
+          border: "#EBD49A",
+          color: WARNING,
+          icon: "warning-outline" as const,
+        }
+      : notice.type === "success"
+      ? {
+          background: SUCCESS_LIGHT,
+          border: "#BFE0CA",
+          color: SUCCESS,
+          icon: "checkmark-circle-outline" as const,
+        }
+      : {
+          background: INFO_LIGHT,
+          border: "#C5DFEC",
+          color: INFO,
+          icon: "information-circle-outline" as const,
+        };
+
   return (
-    <>
-      <View style={styles.walkInHero}>
-        <View style={styles.walkInHeroAvatar}>
-          <Text style={styles.walkInHeroAvatarText}>
-            {patient.name.charAt(0).toUpperCase()}
-          </Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.walkInName}>{patient.name}</Text>
-          <Text style={styles.walkInCode}>{patient.code}</Text>
-        </View>
-        <StatusBadge status={patient.status} />
-      </View>
-
-      <View style={styles.recordInfoGrid}>
-        <RecordInfo label="Phone" value={patient.phone} />
-        <RecordInfo
-          label="Age / Gender"
-          value={`${patient.age} / ${formatLabel(patient.gender)}`}
-        />
-        <RecordInfo label="Visit Date" value={formatDate(patient.visitDate)} />
-        <RecordInfo label="Visit Time" value={formatTime(patient.visitTime)} />
-      </View>
-
-      <RecordSection
-        title="Symptoms"
-        items={[patient.symptoms || "No symptoms recorded."]}
-        render={(item) => String(item)}
+    <View
+      style={[
+        styles.noticeCard,
+        {
+          backgroundColor: palette.background,
+          borderColor: palette.border,
+        },
+      ]}
+    >
+      <Ionicons
+        name={palette.icon}
+        size={21}
+        color={palette.color}
       />
 
-      <RecordSection
-        title="Past Medical History"
-        items={[patient.pastMedicalHistory || "No past medical history recorded."]}
-        render={(item) => String(item)}
-      />
-
-      <TouchableOpacity style={styles.recordPrimaryButton} onPress={onAction}>
-        <Ionicons
-          name={
-            patient.status === "WAITING"
-              ? "play-outline"
-              : patient.status === "IN_PROGRESS"
-              ? "create-outline"
-              : "eye-outline"
-          }
-          size={18}
-          color={GREEN}
-        />
-        <Text style={styles.recordPrimaryButtonText}>
-          {patient.status === "WAITING"
-            ? "Start Visit"
-            : patient.status === "IN_PROGRESS"
-            ? "Continue Prescription"
-            : "View Prescription"}
+      <View style={{ flex: 1 }}>
+        <Text
+          style={[
+            styles.noticeTitle,
+            { color: palette.color },
+          ]}
+        >
+          {notice.title}
         </Text>
+
+        <Text style={styles.noticeMessage}>
+          {notice.message}
+        </Text>
+      </View>
+
+      <TouchableOpacity onPress={onClose}>
+        <Ionicons name="close" size={18} color={MUTED} />
       </TouchableOpacity>
-    </>
-  );
-}
-
-function MedicalRecordView({
-  record,
-  fallbackPatient,
-}: {
-  record: MedicalRecord | null;
-  fallbackPatient: Patient | null;
-}) {
-  if (!record) {
-    return (
-      <View style={styles.emptyRecord}>
-        <Text style={styles.emptyTitle}>No medical record available</Text>
-      </View>
-    );
-  }
-
-  const patient = record.patient || record.patientDetails || {};
-  const appointments = Array.isArray(record.appointments)
-    ? record.appointments
-    : [];
-  const consultations = Array.isArray(record.consultations)
-    ? record.consultations
-    : [];
-  const prescriptions = Array.isArray(record.prescriptions)
-    ? record.prescriptions
-    : [];
-  const therapies = Array.isArray(record.therapies)
-    ? record.therapies
-    : Array.isArray(record.treatmentPlans)
-    ? record.treatmentPlans
-    : [];
-  const notes = Array.isArray(record.notes) ? record.notes : [];
-
-  return (
-    <>
-      <View style={styles.recordInfoGrid}>
-        <RecordInfo
-          label="Patient"
-          value={patient.name || fallbackPatient?.name || "Patient"}
-        />
-        <RecordInfo
-          label="Phone"
-          value={patient.phoneNumber || fallbackPatient?.phone || "-"}
-        />
-        <RecordInfo
-          label="Age / Gender"
-          value={`${patient.age ?? fallbackPatient?.age ?? "-"} / ${formatLabel(
-            patient.gender || fallbackPatient?.gender || "-"
-          )}`}
-        />
-        <RecordInfo
-          label="Patient ID"
-          value={String(
-            patient.patientId ?? fallbackPatient?.id ?? "-"
-          )}
-        />
-      </View>
-
-      <RecordSection
-        title="Appointments"
-        items={appointments}
-        render={(item) =>
-          `${formatDate(item.appointmentDate)} · ${formatTime(
-            item.startTime
-          )}\n${formatLabel(item.appointmentMode)} · ${formatLabel(item.status)}`
-        }
-      />
-
-      <RecordSection
-        title="Consultations"
-        items={consultations}
-        render={(item) =>
-          `${item.doctorName || "Consultation"}\n${formatLabel(item.status)}${
-            item.consultationDate ? ` · ${formatDate(item.consultationDate)}` : ""
-          }`
-        }
-      />
-
-      <RecordSection
-        title="Prescriptions"
-        items={prescriptions}
-        render={(item) =>
-          `${item.diagnosis || "Prescription"}\n${formatLabel(item.status)}${
-            item.createdAt ? ` · ${formatDateTime(item.createdAt)}` : ""
-          }`
-        }
-      />
-
-      <RecordSection
-        title="Therapies"
-        items={therapies}
-        render={(item) =>
-          `${item.therapyName ||
-            item.serviceName ||
-            item.treatmentName ||
-            "Therapy"}\n${formatLabel(item.status)}`
-        }
-      />
-
-      <RecordSection
-        title="Doctor Notes"
-        items={notes}
-        render={(item) =>
-          `${item.title || "Clinical Note"}\n${
-            item.note || item.content || item.notes || "-"
-          }`
-        }
-      />
-    </>
-  );
-}
-
-function AppointmentHistory({ items }: { items: any[] }) {
-  if (!items.length) {
-    return (
-      <View style={styles.emptyRecord}>
-        <View style={styles.emptyIcon}>
-          <Ionicons name="calendar-clear-outline" size={28} color={GREEN} />
-        </View>
-        <Text style={styles.emptyTitle}>No appointments found</Text>
-        <Text style={styles.emptyText}>
-          This patient has no appointment history available.
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.historyList}>
-      {items.map((item, index) => (
-        <View key={String(item.id || item.appointmentId || index)} style={styles.historyCard}>
-          <View style={styles.historyIcon}>
-            <Ionicons
-              name={
-                String(item.appointmentMode || "").toUpperCase() === "ONLINE"
-                  ? "videocam-outline"
-                  : "business-outline"
-              }
-              size={19}
-              color={GREEN}
-            />
-          </View>
-
-          <View style={{ flex: 1 }}>
-            <Text style={styles.historyDate}>
-              {formatDate(item.appointmentDate)}
-            </Text>
-            <Text style={styles.historyMeta}>
-              {formatTime(item.startTime)} ·{" "}
-              {formatLabel(item.appointmentMode || "OFFLINE")}
-            </Text>
-            <Text style={styles.historyStatus}>
-              {formatLabel(item.status)}
-            </Text>
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function RecordInfo({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.recordInfo}>
-      <Text style={styles.recordInfoLabel}>{label.toUpperCase()}</Text>
-      <Text style={styles.recordInfoValue}>{value || "-"}</Text>
     </View>
   );
 }
 
 function RecordSection({
   title,
-  items,
-  render,
+  children,
 }: {
   title: string;
-  items: any[];
-  render: (item: any) => string;
+  children: React.ReactNode;
 }) {
   return (
     <View style={styles.recordSection}>
-      <Text style={styles.recordSectionTitle}>{title}</Text>
+      <View style={styles.recordSectionHeader}>
+        <Text style={styles.recordSectionTitle}>
+          {title}
+        </Text>
+      </View>
 
-      {!items.length ? (
-        <Text style={styles.recordEmpty}>No records available.</Text>
-      ) : (
-        items.map((item, index) => (
-          <View key={String(item?.id || index)} style={styles.recordItem}>
-            <Text style={styles.recordItemText}>{render(item)}</Text>
-          </View>
-        ))
-      )}
+      <View style={styles.recordSectionBody}>
+        {children}
+      </View>
     </View>
   );
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return "-";
+function HistorySection({
+  title,
+  icon,
+  records,
+  render,
+  onPress,
+}: {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  records: any[];
+  render: (item: any) => {
+    title: string;
+    subtitle: string;
+    meta?: string;
+  };
+  onPress?: (item: any) => void;
+}) {
+  return (
+    <RecordSection title={`${title} (${records.length})`}>
+      {records.length ? (
+        records.map((item, index) => {
+          const content = render(item);
 
-  const clean = String(value).split("T")[0];
-  const date = new Date(`${clean}T00:00:00`);
+          return (
+            <TouchableOpacity
+              key={String(item?.id ?? index)}
+              disabled={!onPress}
+              activeOpacity={onPress ? 0.7 : 1}
+              style={styles.historyCard}
+              onPress={() => onPress?.(item)}
+            >
+              <View style={styles.historyIcon}>
+                <Ionicons
+                  name={icon}
+                  size={18}
+                  color={GREEN}
+                />
+              </View>
 
-  if (Number.isNaN(date.getTime())) return clean;
+              <View style={{ flex: 1 }}>
+                <Text style={styles.historyTitle}>
+                  {content.title}
+                </Text>
 
-  return date.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+                <Text style={styles.historySubtitle}>
+                  {content.subtitle}
+                </Text>
+
+                {!!content.meta && (
+                  <Text
+                    style={styles.historyMeta}
+                    numberOfLines={2}
+                  >
+                    {content.meta}
+                  </Text>
+                )}
+              </View>
+
+              {onPress && (
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color={MUTED}
+                />
+              )}
+            </TouchableOpacity>
+          );
+        })
+      ) : (
+        <Text style={styles.emptyText}>
+          No records available.
+        </Text>
+      )}
+    </RecordSection>
+  );
 }
 
-function formatTime(value?: string | null) {
-  if (!value) return "-";
+function Detail({
+  label,
+  value,
+  wide = false,
+}: {
+  label: string;
+  value: any;
+  wide?: boolean;
+}) {
+  return (
+    <View
+      style={[
+        styles.detailItem,
+        wide && styles.detailItemWide,
+      ]}
+    >
+      <Text style={styles.detailLabel}>
+        {label.toUpperCase()}
+      </Text>
 
-  const parts = String(value).split(":");
-  if (parts.length < 2) return String(value);
-
-  const date = new Date();
-  date.setHours(Number(parts[0]), Number(parts[1]), 0, 0);
-
-  return date.toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-
-  return date.toLocaleString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatLabel(value?: string | null) {
-  if (!value || value === "-") return "-";
-
-  return String(value)
-    .replace(/_/g, " ")
-    .toLowerCase()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+      <Text style={styles.detailValue}>
+        {value || "—"}
+      </Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: CREAM },
-  loaderPage: {
+  screen: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
     backgroundColor: CREAM,
   },
-  loaderText: {
-    marginTop: 11,
-    fontFamily: "DMSans_500Medium",
-    color: MUTED,
-    fontSize: 11,
+
+  content: {
+    padding: 16,
+    paddingBottom: 36,
   },
 
-  header: {
-    minHeight: 75,
-    paddingTop: Platform.OS === "web" ? 12 : 43,
-    paddingBottom: 11,
-    paddingHorizontal: 14,
-    flexDirection: "row",
+  loaderPage: {
+    flex: 1,
+    backgroundColor: CREAM,
     alignItems: "center",
+    justifyContent: "center",
+    padding: 30,
     gap: 9,
-    backgroundColor: WHITE,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
   },
-  headerIcon: {
-    width: 43,
-    height: 43,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: MINT,
-  },
-  headerTitleWrap: { flex: 1 },
-  headerEyebrow: {
-    fontFamily: "DMSans_700Bold",
-    color: GOLD_DARK,
-    fontSize: 7,
-    letterSpacing: 1,
-  },
-  headerTitle: {
-    marginTop: 2,
-    fontFamily: "PlayfairDisplay_700Bold",
+
+  loaderTitle: {
+    marginTop: 8,
     color: GREEN,
-    fontSize: 19,
+    fontSize: 20,
+    fontWeight: "900",
   },
-  avatar: {
-    width: 43,
-    height: 43,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: GREEN,
-  },
-  avatarText: {
-    fontFamily: "DMSans_700Bold",
-    color: WHITE,
-    fontSize: 17,
+
+  loaderText: {
+    color: MUTED,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
   },
 
   hero: {
-    overflow: "hidden",
-    marginHorizontal: 15,
-    marginTop: 19,
-    padding: 22,
-    borderRadius: 28,
+    padding: 20,
+    borderRadius: 22,
     backgroundColor: GREEN,
+    marginBottom: 14,
   },
-  heroGlowOne: {
-    position: "absolute",
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    right: -65,
-    top: -95,
-    backgroundColor: "rgba(255,255,255,.06)",
-  },
-  heroGlowTwo: {
-    position: "absolute",
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    left: -80,
-    bottom: -110,
-    backgroundColor: "rgba(214,180,91,.15)",
-  },
-  heroBadge: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 20,
-    flexDirection: "row",
+
+  heroIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF12",
     alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(255,255,255,.09)",
+    justifyContent: "center",
+    marginBottom: 16,
   },
-  heroBadgeText: {
-    fontFamily: "DMSans_700Bold",
-    color: GOLD_LIGHT,
-    fontSize: 7.5,
-    letterSpacing: 1,
+
+  eyebrow: {
+    color: GOLD,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.3,
   },
+
   heroTitle: {
-    marginTop: 17,
-    fontFamily: "PlayfairDisplay_700Bold",
+    marginTop: 5,
     color: WHITE,
     fontSize: 27,
-    lineHeight: 33,
+    lineHeight: 34,
+    fontWeight: "900",
   },
-  heroGold: { color: GOLD_LIGHT },
+
   heroText: {
-    marginTop: 10,
-    maxWidth: 330,
-    fontFamily: "DMSans_400Regular",
-    color: "#D3E1D8",
+    marginTop: 7,
+    color: "#DDEAE4",
+    fontSize: 13,
+    lineHeight: 20,
+  },
+
+  refreshButton: {
+    marginTop: 16,
+    alignSelf: "flex-start",
+    minHeight: 42,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FFFFFF38",
+    backgroundColor: "#FFFFFF12",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+
+  refreshText: {
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  noticeCard: {
+    marginBottom: 14,
+    padding: 13,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 9,
+  },
+
+  noticeTitle: {
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  noticeMessage: {
+    marginTop: 3,
+    color: TEXT,
     fontSize: 11,
-    lineHeight: 18,
+    lineHeight: 17,
   },
 
   summaryGrid: {
-    marginTop: 15,
-    marginHorizontal: 15,
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
     rowGap: 10,
-  },
-  summaryCard: {
-    width: "48.6%",
-    minHeight: 108,
-    padding: 13,
-    borderRadius: 20,
-    backgroundColor: WHITE,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  summaryIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  summaryLabel: {
-    marginTop: 9,
-    fontFamily: "DMSans_500Medium",
-    color: MUTED,
-    fontSize: 8,
-  },
-  summaryValue: {
-    marginTop: 3,
-    fontFamily: "PlayfairDisplay_700Bold",
-    color: GREEN,
-    fontSize: 23,
+    marginBottom: 14,
   },
 
-  filterCard: {
-    marginHorizontal: 15,
-    marginTop: 15,
-    padding: 13,
-    borderRadius: 21,
+  summaryCard: {
+    width: "48.5%",
+    minHeight: 112,
+    padding: 14,
+    borderRadius: 18,
     backgroundColor: WHITE,
     borderWidth: 1,
     borderColor: BORDER,
   },
-  searchWrap: {
-    minHeight: 51,
-    paddingHorizontal: 12,
-    borderRadius: 15,
-    flexDirection: "row",
+
+  summaryIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: MINT,
     alignItems: "center",
-    gap: 8,
-    backgroundColor: "#F7F9F7",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+
+  summaryLabel: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
+  summaryValue: {
+    marginTop: 3,
+    color: GREEN,
+    fontSize: 25,
+    fontWeight: "900",
+  },
+
+  searchRow: {
+    flexDirection: "row",
+    gap: 9,
+    marginBottom: 17,
+  },
+
+  searchBox: {
+    flex: 1,
+    minHeight: 50,
+    borderRadius: 15,
+    backgroundColor: WHITE,
     borderWidth: 1,
     borderColor: BORDER,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
   },
+
   searchInput: {
     flex: 1,
-    fontFamily: "DMSans_500Medium",
     color: TEXT,
-    fontSize: 10,
+    fontSize: 13,
   },
-  tabRow: {
-    marginTop: 10,
-    padding: 4,
-    flexDirection: "row",
-    gap: 4,
-    borderRadius: 13,
-    backgroundColor: "#F4F7F4",
-  },
-  tabButton: {
-    flex: 1,
-    minHeight: 39,
-    borderRadius: 10,
+
+  filterButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 15,
+    backgroundColor: WHITE,
+    borderWidth: 1,
+    borderColor: BORDER,
     alignItems: "center",
     justifyContent: "center",
   },
-  tabButtonActive: { backgroundColor: GREEN },
-  tabText: {
-    fontFamily: "DMSans_700Bold",
-    color: MUTED,
-    fontSize: 7.5,
-  },
-  tabTextActive: { color: WHITE },
-  moreFilterButton: {
-    marginTop: 10,
-    minHeight: 43,
-    paddingHorizontal: 12,
-    borderRadius: 13,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    backgroundColor: "#FFF7E2",
-  },
-  moreFilterText: {
-    flex: 1,
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 8.5,
-  },
-  filterDot: {
-    minWidth: 22,
-    height: 22,
-    paddingHorizontal: 5,
-    borderRadius: 11,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: GOLD,
-  },
-  filterDotText: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 7,
+
+  filterButtonActive: {
+    backgroundColor: GREEN,
+    borderColor: GREEN,
   },
 
   sectionHeader: {
-    marginHorizontal: 15,
-    marginTop: 20,
     marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-  },
-  sectionEyebrow: {
-    fontFamily: "DMSans_700Bold",
-    color: GOLD_DARK,
-    fontSize: 7,
-    letterSpacing: 1,
-  },
-  sectionTitle: {
-    marginTop: 3,
-    fontFamily: "PlayfairDisplay_700Bold",
-    color: GREEN,
-    fontSize: 21,
-  },
-  resultBadge: {
-    paddingHorizontal: 9,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: MINT,
-  },
-  resultText: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 6.5,
   },
 
-  patientList: { marginHorizontal: 15, gap: 10 },
+  sectionEyebrow: {
+    color: GOLD_DARK,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+  },
+
+  sectionTitle: {
+    marginTop: 3,
+    color: GREEN,
+    fontSize: 20,
+    fontWeight: "900",
+  },
+
+  sectionSub: {
+    marginTop: 3,
+    color: MUTED,
+    fontSize: 11,
+  },
+
+  list: {
+    gap: 11,
+  },
+
   patientCard: {
-    padding: 13,
+    padding: 15,
     borderRadius: 20,
     backgroundColor: WHITE,
     borderWidth: 1,
     borderColor: BORDER,
   },
+
   patientTop: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
-  patientAvatar: {
+
+  avatar: {
     width: 48,
     height: 48,
-    borderRadius: 15,
+    borderRadius: 16,
+    backgroundColor: GREEN,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: GREEN,
   },
-  patientAvatarText: {
-    fontFamily: "DMSans_700Bold",
+
+  avatarText: {
     color: WHITE,
-    fontSize: 17,
+    fontSize: 20,
+    fontWeight: "900",
   },
+
   patientName: {
-    fontFamily: "PlayfairDisplay_700Bold",
     color: GREEN,
-    fontSize: 16,
+    fontSize: 17,
+    fontWeight: "900",
   },
+
   patientCode: {
-    marginTop: 2,
-    fontFamily: "DMSans_500Medium",
+    marginTop: 3,
     color: MUTED,
-    fontSize: 7,
+    fontSize: 11,
   },
-  typeBadge: {
+
+  registeredBadge: {
     paddingHorizontal: 8,
     paddingVertical: 6,
-    borderRadius: 20,
+    borderRadius: 999,
+    backgroundColor: MINT,
   },
-  registeredBadge: { backgroundColor: SUCCESS_LIGHT },
-  walkInBadge: { backgroundColor: WARNING_LIGHT },
-  typeBadgeText: {
-    fontFamily: "DMSans_700Bold",
-    fontSize: 5.8,
+
+  registeredBadgeText: {
+    color: GREEN,
+    fontSize: 8,
+    fontWeight: "900",
   },
-  patientInfoGrid: {
-    marginTop: 12,
+
+  infoGrid: {
+    marginTop: 14,
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    rowGap: 7,
+    rowGap: 9,
   },
+
   infoItem: {
-    width: "48.8%",
-    minHeight: 54,
-    padding: 9,
+    width: "48.5%",
+    minHeight: 68,
+    padding: 10,
     borderRadius: 13,
+    backgroundColor: "#FCFDFB",
+    borderWidth: 1,
+    borderColor: BORDER,
     flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    backgroundColor: "#F9FAF8",
+    alignItems: "flex-start",
+    gap: 8,
   },
+
   infoLabel: {
-    fontFamily: "DMSans_700Bold",
     color: MUTED,
-    fontSize: 5.5,
+    fontSize: 8,
+    fontWeight: "800",
     letterSpacing: 0.5,
   },
+
   infoValue: {
-    marginTop: 3,
-    fontFamily: "DMSans_700Bold",
+    marginTop: 4,
     color: TEXT,
-    fontSize: 7.5,
+    fontSize: 12,
+    fontWeight: "800",
   },
-  patientBottom: {
-    marginTop: 11,
+
+  emailBox: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: "#FAFCFA",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 8,
   },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  statusText: {
-    fontFamily: "DMSans_700Bold",
-    fontSize: 5.8,
-  },
-  interactionText: {
-    fontFamily: "DMSans_500Medium",
+
+  emailText: {
+    flex: 1,
     color: MUTED,
-    fontSize: 6.5,
+    fontSize: 11,
   },
+
   cardActions: {
-    marginTop: 11,
-    paddingTop: 11,
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
+    marginTop: 12,
     flexDirection: "row",
     gap: 8,
   },
-  viewButton: {
+
+  recordButton: {
     flex: 1,
-    minHeight: 43,
-    borderRadius: 13,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
+    minHeight: 47,
+    borderRadius: 14,
     backgroundColor: MINT,
-  },
-  viewButtonText: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 7.5,
-  },
-  goldButton: {
-    flex: 1,
-    minHeight: 43,
-    borderRadius: 13,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: GOLD,
   },
-  goldButtonText: {
-    fontFamily: "DMSans_700Bold",
+
+  recordButtonText: {
     color: GREEN,
-    fontSize: 7.5,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  prescriptionButton: {
+    flex: 1.1,
+    minHeight: 47,
+    borderRadius: 14,
+    backgroundColor: INFO_LIGHT,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+
+  prescriptionButtonText: {
+    color: INFO,
+    fontSize: 11,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+
+  actionDisabled: {
+    backgroundColor: "#F2F4F2",
+  },
+
+  disabledActionText: {
+    color: MUTED,
   },
 
   emptyCard: {
-    paddingVertical: 35,
-    alignItems: "center",
-    borderRadius: 20,
-    backgroundColor: WHITE,
+    minHeight: 180,
+    padding: 24,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: BORDER,
-  },
-  emptyIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
+    backgroundColor: WHITE,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: MINT,
   },
+
   emptyTitle: {
     marginTop: 10,
-    fontFamily: "PlayfairDisplay_700Bold",
     color: GREEN,
     fontSize: 17,
-  },
-  emptyText: {
-    marginTop: 4,
-    fontFamily: "DMSans_400Regular",
-    color: MUTED,
-    fontSize: 8,
+    fontWeight: "900",
     textAlign: "center",
   },
 
-  drawerRoot: { flex: 1, flexDirection: "row" },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(5, 28, 19, .70)",
-  },
-  drawer: {
-    width: "86%",
-    maxWidth: 350,
-    height: "100%",
-    paddingTop: Platform.OS === "web" ? 35 : 58,
-    paddingHorizontal: 15,
-    paddingBottom: 20,
-    backgroundColor: GREEN,
-  },
-  drawerBrandRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  drawerLogo: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,.10)",
-  },
-  drawerBrand: {
-    fontFamily: "PlayfairDisplay_700Bold",
-    color: WHITE,
-    fontSize: 24,
-  },
-  drawerPortal: {
-    marginTop: 1,
-    fontFamily: "DMSans_700Bold",
-    color: GOLD_LIGHT,
-    fontSize: 8,
-    letterSpacing: 1,
-  },
-  drawerClose: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: WHITE,
-  },
-  drawerDoctor: {
-    marginTop: 18,
-    marginBottom: 8,
-    padding: 11,
-    borderRadius: 17,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-    backgroundColor: "rgba(255,255,255,.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,.10)",
-  },
-  drawerAvatar: {
-    width: 43,
-    height: 43,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: GOLD,
-  },
-  drawerAvatarText: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 16,
-  },
-  drawerDoctorName: {
-    fontFamily: "DMSans_700Bold",
-    color: WHITE,
-    fontSize: 11,
-  },
-  drawerDoctorRole: {
-    marginTop: 2,
-    fontFamily: "DMSans_400Regular",
-    color: "#C5D7CC",
-    fontSize: 7.5,
-  },
-  drawerSection: { marginTop: 14 },
-  drawerSectionLabel: {
-    marginLeft: 11,
-    marginBottom: 6,
-    fontFamily: "DMSans_700Bold",
-    color: "#7E9C8C",
-    fontSize: 7,
-    letterSpacing: 1.2,
-  },
-  drawerItem: {
-    minHeight: 50,
-    paddingHorizontal: 9,
-    borderRadius: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-  },
-  drawerItemActive: { backgroundColor: WHITE },
-  drawerItemIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,.07)",
-  },
-  drawerItemIconActive: { backgroundColor: MINT },
-  drawerItemText: {
-    flex: 1,
-    fontFamily: "DMSans_700Bold",
-    color: "#E4ECE7",
-    fontSize: 10.5,
-  },
-  drawerItemTextActive: { color: GREEN },
-  logoutButton: {
-    minHeight: 49,
-    borderRadius: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: "rgba(255,255,255,.10)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,.16)",
-  },
-  logoutText: {
-    fontFamily: "DMSans_700Bold",
-    color: WHITE,
-    fontSize: 11,
+  emptyText: {
+    marginTop: 5,
+    color: MUTED,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
   },
 
-  sheetRoot: { flex: 1, justifyContent: "flex-end" },
-  filterSheet: {
-    paddingTop: 10,
-    paddingHorizontal: 18,
-    paddingBottom: Platform.OS === "ios" ? 30 : 21,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    backgroundColor: CREAM,
-  },
-  recordSheet: {
-    maxHeight: "92%",
-    paddingTop: 10,
-    paddingHorizontal: 17,
-    paddingBottom: Platform.OS === "ios" ? 30 : 18,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    backgroundColor: CREAM,
-  },
-  sheetHandle: {
-    alignSelf: "center",
-    width: 44,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: "#CDD4CF",
-  },
-  sheetHeader: {
-    marginTop: 14,
-    marginBottom: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  sheetEyebrow: {
-    fontFamily: "DMSans_700Bold",
-    color: GOLD_DARK,
-    fontSize: 7,
-    letterSpacing: 1,
-  },
-  sheetTitle: {
-    marginTop: 4,
-    fontFamily: "PlayfairDisplay_700Bold",
-    color: GREEN,
-    fontSize: 24,
-  },
-  sheetClose: {
-    width: 39,
-    height: 39,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: MINT,
-  },
-  fieldLabel: {
-    marginTop: 9,
-    marginBottom: 7,
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 7,
-    letterSpacing: 0.8,
-  },
-  optionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 7,
-  },
-  optionChip: {
-    minHeight: 39,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
+  pagination: {
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 16,
     backgroundColor: WHITE,
     borderWidth: 1,
     borderColor: BORDER,
+    gap: 11,
   },
-  optionChipActive: {
+
+  paginationText: {
+    color: MUTED,
+    fontSize: 11,
+    textAlign: "center",
+  },
+
+  pageButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+
+  pageButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: WHITE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  pageDisabled: {
+    opacity: 0.35,
+  },
+
+  currentPage: {
+    minWidth: 36,
+    height: 36,
+    paddingHorizontal: 8,
+    borderRadius: 11,
+    backgroundColor: GREEN,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  currentPageText: {
+    color: WHITE,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  pageOf: {
+    color: MUTED,
+    fontSize: 11,
+  },
+
+  modalRoot: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#06261DAE",
+  },
+
+  filterSheet: {
+    padding: 20,
+    paddingBottom: 30,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: WHITE,
+  },
+
+  sheetHandle: {
+    alignSelf: "center",
+    width: 42,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: "#D5DDD8",
+    marginBottom: 18,
+  },
+
+  sheetEyebrow: {
+    color: GOLD_DARK,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.1,
+  },
+
+  sheetTitle: {
+    marginTop: 4,
+    color: GREEN,
+    fontSize: 22,
+    fontWeight: "900",
+  },
+
+  filterLabel: {
+    marginTop: 20,
+    marginBottom: 8,
+    color: MUTED,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.7,
+  },
+
+  optionsWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+
+  optionButton: {
+    minHeight: 40,
+    paddingHorizontal: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: WHITE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  optionButtonActive: {
     backgroundColor: GREEN,
     borderColor: GREEN,
   },
-  optionChipText: {
-    fontFamily: "DMSans_700Bold",
-    color: MUTED,
-    fontSize: 7.5,
+
+  optionText: {
+    color: GREEN,
+    fontSize: 11,
+    fontWeight: "800",
   },
-  optionChipTextActive: { color: WHITE },
+
+  optionTextActive: {
+    color: WHITE,
+  },
+
   filterActions: {
-    marginTop: 20,
+    marginTop: 22,
     flexDirection: "row",
-    gap: 8,
+    gap: 9,
   },
-  clearButton: {
+
+  resetButton: {
     flex: 1,
     minHeight: 48,
     borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: WHITE,
     borderWidth: 1,
     borderColor: BORDER,
-  },
-  clearButtonText: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 9,
-  },
-  applyButton: {
-    flex: 1.5,
-    minHeight: 48,
-    borderRadius: 14,
-    flexDirection: "row",
+    backgroundColor: WHITE,
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    backgroundColor: GOLD,
-  },
-  applyButtonText: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 9,
   },
 
-  recordLoader: {
-    minHeight: 230,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  walkInHero: {
-    padding: 12,
-    borderRadius: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: MINT,
-  },
-  walkInHeroAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: GOLD,
-  },
-  walkInHeroAvatarText: {
-    fontFamily: "DMSans_700Bold",
+  resetButtonText: {
     color: GREEN,
-    fontSize: 17,
+    fontSize: 13,
+    fontWeight: "900",
   },
-  walkInName: {
-    fontFamily: "PlayfairDisplay_700Bold",
-    color: GREEN,
-    fontSize: 17,
-  },
-  walkInCode: {
-    marginTop: 2,
-    fontFamily: "DMSans_500Medium",
-    color: MUTED,
-    fontSize: 7,
-  },
-  recordInfoGrid: {
-    marginTop: 11,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    rowGap: 8,
-  },
-  recordInfo: {
-    width: "48.7%",
-    minHeight: 74,
-    padding: 11,
-    borderRadius: 15,
-    backgroundColor: WHITE,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  recordInfoLabel: {
-    fontFamily: "DMSans_700Bold",
-    color: MUTED,
-    fontSize: 6,
-    letterSpacing: 0.7,
-  },
-  recordInfoValue: {
-    marginTop: 6,
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 9,
-    lineHeight: 14,
-  },
-  recordSection: {
-    marginTop: 10,
-    padding: 12,
-    borderRadius: 16,
-    backgroundColor: WHITE,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  recordSectionTitle: {
-    fontFamily: "PlayfairDisplay_700Bold",
-    color: GREEN,
-    fontSize: 15,
-  },
-  recordItem: {
-    marginTop: 8,
-    padding: 10,
-    borderRadius: 12,
-    backgroundColor: "#F7F9F7",
-  },
-  recordItemText: {
-    fontFamily: "DMSans_500Medium",
-    color: TEXT,
-    fontSize: 8.5,
-    lineHeight: 14,
-  },
-  recordEmpty: {
-    marginTop: 8,
-    fontFamily: "DMSans_400Regular",
-    color: MUTED,
-    fontSize: 8,
-  },
-  recordPrimaryButton: {
-    minHeight: 49,
-    marginTop: 13,
+
+  applyButton: {
+    flex: 1.4,
+    minHeight: 48,
     borderRadius: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7,
-    backgroundColor: GOLD,
-  },
-  recordPrimaryButtonText: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 9,
-  },
-  emptyRecord: {
-    minHeight: 210,
+    backgroundColor: GREEN,
     alignItems: "center",
     justifyContent: "center",
   },
-  historyList: { gap: 8 },
-  historyCard: {
-    padding: 11,
-    borderRadius: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
+
+  applyButtonText: {
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  recordScreen: {
+    flex: 1,
+    backgroundColor: CREAM,
+  },
+
+  recordHeader: {
+    paddingTop: 54,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
     backgroundColor: WHITE,
-    borderWidth: 1,
-    borderColor: BORDER,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
-  historyIcon: {
+
+  backButton: {
     width: 42,
     height: 42,
     borderRadius: 13,
+    backgroundColor: MINT,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: MINT,
-  },
-  historyDate: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 9,
-  },
-  historyMeta: {
-    marginTop: 3,
-    fontFamily: "DMSans_500Medium",
-    color: MUTED,
-    fontSize: 7,
-  },
-  historyStatus: {
-    marginTop: 4,
-    fontFamily: "DMSans_700Bold",
-    color: GOLD_DARK,
-    fontSize: 6,
   },
 
-  centerModal: {
+  recordEyebrow: {
+    color: GOLD_DARK,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+  },
+
+  recordTitle: {
+    marginTop: 3,
+    color: GREEN,
+    fontSize: 20,
+    fontWeight: "900",
+  },
+
+  recordSub: {
+    marginTop: 2,
+    color: MUTED,
+    fontSize: 11,
+  },
+
+  recordBody: {
+    padding: 16,
+    paddingBottom: 40,
+    gap: 12,
+  },
+
+  modalLoader: {
     flex: 1,
-    paddingHorizontal: 21,
     alignItems: "center",
     justifyContent: "center",
-  },
-  confirmCard: {
-    width: "100%",
-    maxWidth: 380,
-    padding: 22,
-    borderRadius: 27,
-    alignItems: "center",
-    backgroundColor: CREAM,
-    borderWidth: 1,
-    borderColor: "rgba(214,180,91,.42)",
-    elevation: 18,
-  },
-  confirmIcon: {
-    width: 67,
-    height: 67,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: MINT,
-  },
-  confirmActions: {
-    width: "100%",
-    marginTop: 19,
-    flexDirection: "row",
+    padding: 30,
     gap: 8,
   },
-  cancelButton: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: WHITE,
+
+  recordSection: {
+    overflow: "hidden",
+    borderRadius: 17,
     borderWidth: 1,
     borderColor: BORDER,
-  },
-  cancelText: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 9,
-  },
-  confirmButton: {
-    flex: 1.2,
-    minHeight: 48,
-    borderRadius: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: GOLD,
-  },
-  confirmText: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 9,
+    backgroundColor: WHITE,
   },
 
-  noticeCard: {
-    width: "100%",
-    maxWidth: 380,
-    padding: 22,
-    borderRadius: 28,
-    alignItems: "center",
-    backgroundColor: CREAM,
-    borderWidth: 1,
-    borderColor: "rgba(214,180,91,.42)",
-    elevation: 18,
+  recordSectionHeader: {
+    padding: 13,
+    backgroundColor: "#F2F7F4",
   },
-  noticeIcon: {
-    width: 68,
-    height: 68,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  noticeEyebrow: {
-    marginTop: 14,
-    fontFamily: "DMSans_700Bold",
-    color: GOLD_DARK,
-    fontSize: 7,
-    letterSpacing: 1.1,
-  },
-  noticeTitle: {
-    marginTop: 6,
-    fontFamily: "PlayfairDisplay_700Bold",
+
+  recordSectionTitle: {
     color: GREEN,
-    fontSize: 23,
-    textAlign: "center",
+    fontSize: 15,
+    fontWeight: "900",
   },
-  noticeMessage: {
-    marginTop: 8,
-    fontFamily: "DMSans_400Regular",
-    color: MUTED,
-    fontSize: 9.5,
-    lineHeight: 16,
-    textAlign: "center",
+
+  recordSectionBody: {
+    padding: 12,
   },
-  noticeButton: {
+
+  detailGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    rowGap: 9,
+  },
+
+  detailItem: {
+    width: "48.5%",
+    padding: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: "#FCFDFB",
+  },
+
+  detailItemWide: {
     width: "100%",
-    minHeight: 48,
-    marginTop: 18,
-    borderRadius: 14,
+  },
+
+  detailLabel: {
+    color: MUTED,
+    fontSize: 8,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+
+  detailValue: {
+    marginTop: 5,
+    color: TEXT,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+
+  historyCard: {
+    minHeight: 68,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EDF1EE",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: GOLD,
+    gap: 10,
   },
-  noticeButtonText: {
-    fontFamily: "DMSans_700Bold",
+
+  historyIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: MINT,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  historyTitle: {
+    color: TEXT,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "900",
+  },
+
+  historySubtitle: {
+    marginTop: 3,
+    color: GREEN_2,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+
+  historyMeta: {
+    marginTop: 4,
+    color: MUTED,
+    fontSize: 10,
+    lineHeight: 15,
+  },
+
+  viewRxBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: INFO_LIGHT,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+
+  viewRxBadgeText: {
+    color: INFO,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+
+  noPrescriptionBox: {
+    minHeight: 150,
+    padding: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  medicineCard: {
+    marginBottom: 10,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: "#FCFDFB",
+  },
+
+  medicineName: {
     color: GREEN,
-    fontSize: 9,
+    fontSize: 14,
+    fontWeight: "900",
+    marginBottom: 10,
   },
 });

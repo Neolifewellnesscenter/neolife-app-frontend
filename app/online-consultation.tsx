@@ -7,17 +7,16 @@ import {
   useFonts as useDMSans,
 } from "@expo-google-fonts/dm-sans";
 import {
-  PlayfairDisplay_600SemiBold,
   PlayfairDisplay_700Bold,
   useFonts as usePlayfair,
 } from "@expo-google-fonts/playfair-display";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   Image,
   KeyboardAvoidingView,
   Linking,
@@ -31,25 +30,30 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import * as FileSystem from "expo-file-system";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import RazorpayCheckout from "react-native-razorpay";
 
-import PatientDrawer from "../components/PatientDrawer";
-import PatientHeader from "../components/PatientHeader";
 import { API_BASE_URL } from "../services/api";
+import PatientDrawer from "../components/PatientDrawer";
 
 const GREEN = "#0B3D2E";
 const GREEN_2 = "#14533D";
 const MINT = "#EAF5EF";
 const GOLD = "#D6B45B";
 const GOLD_DARK = "#A98632";
+const GOLD_LIGHT = "#F4E6B7";
 const CREAM = "#FBFAF6";
 const WHITE = "#FFFFFF";
 const TEXT = "#17231D";
 const MUTED = "#75837B";
 const BORDER = "#E6EBE7";
 const DANGER = "#B95045";
+const DANGER_LIGHT = "#FBECE9";
 const SUCCESS = "#287146";
+const SUCCESS_LIGHT = "#EAF7EE";
 const INFO = "#356C8C";
-const SOFT_GOLD = "#FFF7DE";
+const INFO_LIGHT = "#EDF6FB";
 
 type NoticeType = "success" | "error" | "info";
 
@@ -67,7 +71,6 @@ type Doctor = {
   qualification?: string;
   specialization?: string;
   experience?: string | number;
-  experienceYears?: string | number;
   imageUrl?: string;
   profileImage?: string;
   profileImageUrl?: string;
@@ -77,12 +80,8 @@ type Doctor = {
 
 type Slot = {
   id?: number | string;
-  appointmentSlotId?: number | string;
   startTime?: string;
-  time?: string;
-  slotTime?: string;
   endTime?: string;
-  toTime?: string;
   available?: boolean;
   booked?: boolean;
   status?: string;
@@ -117,6 +116,8 @@ const EMPTY_PATIENT: PatientForm = {
 
 export default function OnlineConsultationScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileLetter, setProfileLetter] = useState("");
+
   const [step, setStep] = useState(1);
 
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -131,6 +132,7 @@ export default function OnlineConsultationScreen() {
 
   const [patient, setPatient] = useState<PatientForm>(EMPTY_PATIENT);
   const [medicalReports, setMedicalReports] = useState<MedicalFile[]>([]);
+
   const [submitting, setSubmitting] = useState(false);
 
   const [notice, setNotice] = useState<NoticeState>({
@@ -141,6 +143,9 @@ export default function OnlineConsultationScreen() {
     action: "none",
   });
 
+  const heroAnim = useRef(new Animated.Value(0)).current;
+  const stepAnim = useRef(new Animated.Value(1)).current;
+
   const [dmLoaded] = useDMSans({
     DMSans_400Regular,
     DMSans_500Medium,
@@ -148,31 +153,38 @@ export default function OnlineConsultationScreen() {
   });
 
   const [playfairLoaded] = usePlayfair({
-    PlayfairDisplay_600SemiBold,
     PlayfairDisplay_700Bold,
   });
 
-  const selectedStartTime =
-    selectedSlot?.startTime ||
-    selectedSlot?.time ||
-    selectedSlot?.slotTime ||
-    "";
+  const selectedStartTime = selectedSlot?.startTime || "";
+  const selectedEndTime = selectedSlot?.endTime || "";
 
-  const selectedEndTime =
-    selectedSlot?.endTime ||
-    selectedSlot?.toTime ||
-    "";
-
-  const stepTitles = [
-    "Choose Doctor",
-    "Date & Time",
-    "Health Details",
-    "Review Request",
-  ];
+  const completed = useMemo(
+    () => [1, 2, 3, 4].map((item) => item < step),
+    [step]
+  );
 
   useEffect(() => {
     initialize();
+
+    Animated.timing(heroAnim, {
+      toValue: 1,
+      duration: 550,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
   }, []);
+
+  useEffect(() => {
+    stepAnim.setValue(0);
+
+    Animated.timing(stepAnim, {
+      toValue: 1,
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [step]);
 
   async function initialize() {
     const token = await getToken();
@@ -188,7 +200,11 @@ export default function OnlineConsultationScreen() {
       return;
     }
 
-    await Promise.allSettled([loadDoctors(), loadPatientProfile()]);
+    await Promise.allSettled([
+      loadDoctors(),
+      loadPatientProfile(),
+      loadProfileLetter(),
+    ]);
   }
 
   async function getToken() {
@@ -207,14 +223,16 @@ export default function OnlineConsultationScreen() {
       "userId",
       "email",
       "name",
-      "userName",
       "role",
       "profileCompleted",
       "isLoggedIn",
     ]);
   }
 
-  async function apiRequest(endpoint: string, options: RequestInit = {}) {
+  async function apiRequest(
+    endpoint: string,
+    options: RequestInit = {}
+  ) {
     const token = await getToken();
 
     const headers: Record<string, string> = {
@@ -233,6 +251,7 @@ export default function OnlineConsultationScreen() {
     });
 
     const text = await response.text();
+
     let result: any = {};
 
     try {
@@ -250,6 +269,7 @@ export default function OnlineConsultationScreen() {
       const error: any = new Error(
         result?.message || "Your login session has expired."
       );
+
       error.auth = true;
       throw error;
     }
@@ -263,7 +283,19 @@ export default function OnlineConsultationScreen() {
     return result;
   }
 
-  // SAME API
+  async function loadProfileLetter() {
+    try {
+      const savedName =
+        (await AsyncStorage.getItem("name")) ||
+        (await AsyncStorage.getItem("userName")) ||
+        "";
+
+      setProfileLetter(savedName.trim().charAt(0).toUpperCase());
+    } catch {
+      setProfileLetter("");
+    }
+  }
+
   async function loadPatientProfile() {
     try {
       const result = await apiRequest("/users/getProfile", {
@@ -282,12 +314,17 @@ export default function OnlineConsultationScreen() {
         gender: String(user?.gender || "").toUpperCase(),
         phoneNumber: String(user?.phoneNumber || user?.phone || ""),
       }));
+
+      const name = String(user?.name || "").trim();
+
+      if (name) {
+        setProfileLetter(name.charAt(0).toUpperCase());
+      }
     } catch {
       // Prefill is optional.
     }
   }
 
-  // SAME API
   async function loadDoctors() {
     try {
       setDoctorLoading(true);
@@ -330,37 +367,48 @@ export default function OnlineConsultationScreen() {
     if (!selectedDoctor) {
       showNotice(
         "info",
-        "Choose a Doctor",
-        "Please select the doctor you want to consult."
+        "Select a Doctor",
+        "Please choose the doctor you want to consult online."
       );
       return;
     }
 
     setStep(2);
-
-    // Automatically select today the first time Date & Time opens.
-    if (!preferredDate) {
-      loadAvailableSlots(getLocalDateString(0));
-    }
   }
 
-  function handleDateSelected(event: any, selectedDate?: Date) {
-    if (Platform.OS === "android") {
-      setShowDatePicker(false);
-    }
-
-    if (event?.type === "dismissed" || !selectedDate) {
-      return;
-    }
-
-    const year = selectedDate.getFullYear();
-    const month = String(selectedDate.getMonth() + 1).padStart(2, "0");
-    const day = String(selectedDate.getDate()).padStart(2, "0");
-
-    loadAvailableSlots(`${year}-${month}-${day}`);
+  function handleDateSelected(
+  event: any,
+  selectedDate?: Date
+) {
+  // Android calendar closes after selection
+  if (Platform.OS === "android") {
+    setShowDatePicker(false);
   }
 
-  // SAME API
+  if (event?.type === "dismissed") {
+    return;
+  }
+
+  if (!selectedDate) {
+    return;
+  }
+
+  const year = selectedDate.getFullYear();
+
+  const month = String(
+    selectedDate.getMonth() + 1
+  ).padStart(2, "0");
+
+  const day = String(
+    selectedDate.getDate()
+  ).padStart(2, "0");
+
+  const formattedDate =
+    `${year}-${month}-${day}`;
+
+  loadAvailableSlots(formattedDate);
+}
+
   async function loadAvailableSlots(date: string) {
     setPreferredDate(date);
     setSelectedSlot(null);
@@ -369,8 +417,8 @@ export default function OnlineConsultationScreen() {
     if (!selectedDoctor?.id) {
       showNotice(
         "info",
-        "Choose Doctor First",
-        "Please choose a doctor before selecting the consultation date."
+        "Select Doctor First",
+        "Please choose a doctor before selecting a consultation date."
       );
       setStep(1);
       return;
@@ -408,8 +456,8 @@ export default function OnlineConsultationScreen() {
 
       showNotice(
         "error",
-        "Unable to Load Times",
-        error?.message || "Unable to load available online consultation times."
+        "Unable to Load Slots",
+        error?.message || "Unable to load available online consultation slots."
       );
     } finally {
       setSlotLoading(false);
@@ -431,17 +479,17 @@ export default function OnlineConsultationScreen() {
     if (!preferredDate) {
       showNotice(
         "info",
-        "Choose a Date",
-        "Please select your preferred consultation date."
+        "Select Consultation Date",
+        "Please enter your preferred consultation date."
       );
       return;
     }
 
-    if (!selectedSlot || !selectedStartTime) {
+    if (!selectedSlot?.startTime) {
       showNotice(
         "info",
-        "Choose a Time",
-        "Please select one available consultation time."
+        "Select Time Slot",
+        "Please choose one available consultation time."
       );
       return;
     }
@@ -498,7 +546,7 @@ export default function OnlineConsultationScreen() {
       showNotice(
         "info",
         "Symptoms Required",
-        "Please briefly describe the symptoms or health concern."
+        "Please describe the patient’s symptoms or health concern."
       );
       return false;
     }
@@ -521,7 +569,7 @@ export default function OnlineConsultationScreen() {
 
       if (result.canceled) return;
 
-      const picked: MedicalFile[] = result.assets.map((asset) => ({
+      const picked = result.assets.map((asset) => ({
         uri: asset.uri,
         name: asset.name,
         mimeType: asset.mimeType,
@@ -584,7 +632,6 @@ export default function OnlineConsultationScreen() {
     return parts.join("\n") || "No past medical history provided";
   }
 
-  // SAME CONSULTATION REQUEST API + SAME MULTIPART STRUCTURE
   async function submitOnlineConsultation() {
     const token = await getToken();
 
@@ -607,7 +654,7 @@ export default function OnlineConsultationScreen() {
       showNotice(
         "info",
         "Complete Consultation Details",
-        "Please complete the doctor, date, time and patient details."
+        "Please complete the doctor, slot and patient details."
       );
       return;
     }
@@ -615,27 +662,31 @@ export default function OnlineConsultationScreen() {
     try {
       setSubmitting(true);
 
+      // Match the working website request payload exactly.
       const consultationRequest = {
         doctorId: Number(selectedDoctor.id),
         consultationDate: preferredDate,
-        startTime: normalizeApiTime(selectedStartTime),
+        startTime: normalizeApiTime(selectedStartTime).slice(0, 5),
         patientName: patient.patientName.trim(),
         phoneNumber: patient.phoneNumber.trim(),
         age: Number(patient.age),
-        gender: patient.gender,
+        gender: String(patient.gender).toUpperCase(),
         symptoms: patient.symptoms.trim(),
-        pastMedicalHistory: buildPastMedicalHistory(),
+        pastMedicalHistory:
+          patient.pastMedicalHistory.trim() ||
+          "No past medical history provided",
       };
 
+      // React Native cannot append a browser Blob in the same way as the website,
+      // so create a temporary JSON file and upload it as the multipart
+      // `consultation` part with application/json content type.
       const jsonFile = new FileSystem.File(
         FileSystem.Paths.cache,
         `consultation-${Date.now()}.json`
       );
-
       jsonFile.write(JSON.stringify(consultationRequest));
 
       const formData = new FormData();
-
       formData.append(
         "consultation",
         {
@@ -656,17 +707,14 @@ export default function OnlineConsultationScreen() {
         );
       });
 
-      const response = await fetch(
-        `${API_BASE_URL}/consultations/request`,
-        {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        }
-      );
+      const response = await fetch(`${API_BASE_URL}/consultations/request`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
 
       const text = await response.text();
       let result: any = {};
@@ -682,7 +730,6 @@ export default function OnlineConsultationScreen() {
 
       if (response.status === 401 || response.status === 403) {
         await clearSession();
-
         showNotice(
           "error",
           "Session Expired",
@@ -694,13 +741,12 @@ export default function OnlineConsultationScreen() {
 
       if (!response.ok || result?.success === false) {
         throw new Error(
-          result?.message || "Unable to send consultation request."
+          result?.message || `Request failed (${response.status}).`
         );
       }
 
       const consultation = result?.data || {};
-      const consultationId =
-        consultation?.id || consultation?.consultationId;
+      const consultationId = consultation?.id || consultation?.consultationId;
 
       if (!consultationId) {
         throw new Error(
@@ -712,7 +758,6 @@ export default function OnlineConsultationScreen() {
         "pendingConsultationId",
         String(consultationId)
       );
-
       await AsyncStorage.setItem(
         "onlineConsultation",
         JSON.stringify(consultation)
@@ -730,80 +775,136 @@ export default function OnlineConsultationScreen() {
         "PENDING_PAYMENT",
       ].includes(status);
 
+      // Same behavior as the website: payment opens only when the backend
+      // says the consultation is already confirmed/payment-pending.
       if (paymentAllowed) {
-        await initiateConsultationPayment(
-          consultationId,
-          consultation
-        );
+        await initiateConsultationPayment(consultation);
         return;
       }
 
       showNotice(
         "success",
-        "Request Sent",
+        "Request Sent to Doctor",
         result?.message ||
-          "Your request has been sent to the doctor. You will be asked to pay ₹200 only after the doctor confirms or reschedules the consultation.",
+          "Consultation request sent. Payment will be available after doctor confirmation.",
         "appointments"
       );
     } catch (error: any) {
       showNotice(
         "error",
         "Request Could Not Be Sent",
-        error?.message || "Unable to create the online consultation."
+        error?.message || "Unable to send consultation request."
       );
     } finally {
       setSubmitting(false);
     }
   }
 
-  // SAME PAYMENT INITIATION API / BEHAVIOUR FROM YOUR CURRENT FILE
-  async function initiateConsultationPayment(
-    consultationId: string | number,
+  async function verifyConsultationPayment(
+    razorpayResponse: any,
     consultation: any
   ) {
     try {
-      const result = await apiRequest(
-        `/payments/consultation/${encodeURIComponent(
-          String(consultationId)
-        )}/initiate`,
-        {
-          method: "POST",
-        }
-      );
+      const paymentId = razorpayResponse?.razorpay_payment_id;
+      const orderId = razorpayResponse?.razorpay_order_id;
+      const signature = razorpayResponse?.razorpay_signature;
 
-      const paymentData = result?.data || {};
-
-      const paymentUrl =
-        paymentData.checkoutUrl ||
-        paymentData.paymentUrl ||
-        paymentData.shortUrl ||
-        paymentData.razorpayPaymentLink ||
-        "";
-
-      if (paymentUrl) {
-        await Linking.openURL(paymentUrl);
-
-        showNotice(
-          "info",
-          "₹200 Payment Opened",
-          "Complete the secure payment, then return to the app and open My Appointments to check your consultation status.",
-          "appointments"
-        );
-        return;
+      if (!paymentId || !orderId || !signature) {
+        throw new Error("Razorpay did not return complete payment details.");
       }
 
+      const result = await apiRequest("/payments/razorpay/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          razorpayPaymentId: paymentId,
+          razorpayOrderId: orderId,
+          razorpaySignature: signature,
+        }),
+      });
+
+      if (result?.data?.signatureVerified === false) {
+        throw new Error("Payment signature verification failed.");
+      }
+
+      await AsyncStorage.removeItem("pendingConsultationId");
+      await AsyncStorage.removeItem("onlineConsultation");
+
       showNotice(
-        "info",
-        "Consultation Confirmed",
-        "The doctor has confirmed your consultation and payment is ready. Open My Appointments to continue the ₹200 payment.",
+        "success",
+        "Payment Successful",
+        "Payment verified successfully. Your online consultation is confirmed.",
         "appointments"
       );
     } catch (error: any) {
       showNotice(
         "error",
-        "Payment Could Not Start",
+        "Payment Verification Failed",
         error?.message ||
-          "Your request was created, but payment could not be initiated."
+          "Payment completed, but verification failed. Please contact support before paying again.",
+        "appointments"
+      );
+    }
+  }
+
+  async function initiateConsultationPayment(consultation: any) {
+    const consultationId = consultation?.id || consultation?.consultationId;
+
+    try {
+      if (!consultationId) {
+        throw new Error("Consultation ID is missing.");
+      }
+
+      const result = await apiRequest(
+        `/payments/consultation/${encodeURIComponent(
+          String(consultationId)
+        )}/initiate`,
+        { method: "POST" }
+      );
+
+      const paymentData = result?.data || {};
+
+      for (const field of ["keyId", "razorpayOrderId", "amount", "currency"]) {
+        if (paymentData?.[field] == null || paymentData?.[field] === "") {
+          throw new Error(`Payment response is missing ${field}.`);
+        }
+      }
+
+      const options: any = {
+        key: String(paymentData.keyId),
+        amount: Number(paymentData.amount),
+        currency: paymentData.currency || "INR",
+        name: paymentData.name || "NeoLife Wellness Center",
+        description:
+          paymentData.description || "Online consultation payment",
+        order_id: String(paymentData.razorpayOrderId),
+        prefill: {
+          name: paymentData.customerName || patient.patientName,
+          email:
+            paymentData.customerEmail ||
+            (await AsyncStorage.getItem("email")) ||
+            "",
+          contact: paymentData.customerPhone || patient.phoneNumber,
+        },
+        notes: {
+          consultationId: String(consultationId),
+          consultationType: "ONLINE",
+        },
+        theme: { color: "#143d29" },
+      };
+
+      const razorpayResponse = await RazorpayCheckout.open(options);
+      await verifyConsultationPayment(razorpayResponse, consultation);
+    } catch (error: any) {
+      const message =
+        error?.description ||
+        error?.message ||
+        "Payment was cancelled or could not be completed.";
+
+      showNotice(
+        "error",
+        "Payment Not Completed",
+        `${message} You can retry from My Appointments.`,
+        "appointments"
       );
     }
   }
@@ -839,6 +940,18 @@ export default function OnlineConsultationScreen() {
     }
   }
 
+  async function openURL(url: string) {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      showNotice(
+        "error",
+        "Unable to Open",
+        "This link could not be opened on your device."
+      );
+    }
+  }
+
   if (!dmLoaded || !playfairLoaded) {
     return (
       <View style={styles.loader}>
@@ -852,7 +965,41 @@ export default function OnlineConsultationScreen() {
 
   return (
     <View style={styles.screen}>
-      <PatientHeader onMenuPress={() => setMenuOpen(true)} />
+      {/* SAME HEADER */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={() => setMenuOpen(true)}
+        >
+          <Ionicons name="menu-outline" size={25} color={GREEN} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.brandWrap}
+          onPress={() => router.replace("/(tabs)" as any)}
+        >
+          <Image
+            source={require("../assets/images/main_logo.jpeg")}
+            style={styles.logo}
+          />
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.brandName}>NeoLife</Text>
+            <Text style={styles.brandSmall}>Wellness Center</Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.profileButton}
+          onPress={() => router.push("/profile" as any)}
+        >
+          {profileLetter ? (
+            <Text style={styles.profileLetter}>{profileLetter}</Text>
+          ) : (
+            <Ionicons name="person-outline" size={20} color={WHITE} />
+          )}
+        </TouchableOpacity>
+      </View>
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -861,205 +1008,831 @@ export default function OnlineConsultationScreen() {
         <ScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={styles.scrollContent}
         >
-          {/* COMPACT MOBILE HEADER */}
-          <View style={styles.pageIntro}>
-            <TouchableOpacity
-              style={styles.backLink}
-              onPress={() => router.replace("/consultation" as any)}
-            >
-              <Ionicons name="chevron-back" size={20} color={GREEN} />
-              <Text style={styles.backLinkText}>Consultation</Text>
-            </TouchableOpacity>
+          {/* HERO */}
+          <Animated.View
+            style={[
+              styles.hero,
+              {
+                opacity: heroAnim,
+                transform: [
+                  {
+                    translateY: heroAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [18, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <View style={styles.heroOrb1} />
+            <View style={styles.heroOrb2} />
 
-            <View style={styles.introRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.eyebrow}>ONLINE CONSULTATION</Text>
-                <Text style={styles.pageTitle}>Consult from home</Text>
-                <Text style={styles.pageSubtitle}>
-                  Choose a doctor and send your request in four simple steps.
-                </Text>
-              </View>
-
-              <View style={styles.priceBadge}>
-                <Text style={styles.priceTop}>AFTER CONFIRMATION</Text>
-                <Text style={styles.price}>₹200</Text>
-              </View>
+            <View style={styles.heroBadge}>
+              <Ionicons name="videocam-outline" size={14} color={GOLD_LIGHT} />
+              <Text style={styles.heroBadgeText}>ONLINE CONSULTATION</Text>
             </View>
 
-            <View style={styles.noPayStrip}>
-              <Ionicons name="information-circle-outline" size={17} color={GREEN} />
-              <Text style={styles.noPayText}>
-                No payment now. The doctor confirms or reschedules first.
+            <Text style={styles.heroTitle}>
+              Consult Our Doctors{"\n"}
+              <Text style={styles.heroAccent}>From Home</Text>
+            </Text>
+
+            <Text style={styles.heroText}>
+              Choose a doctor, select a convenient online slot and send your
+              health details securely. You pay ₹200 only after the doctor
+              confirms your request.
+            </Text>
+
+            <View style={styles.heroInfo}>
+              <View style={styles.heroInfoIcon}>
+                <Ionicons name="information-circle-outline" size={18} color={GOLD} />
+              </View>
+              <Text style={styles.heroInfoText}>
+                No payment now · Doctor confirms first · ₹200 after confirmation
               </Text>
             </View>
-          </View>
+          </Animated.View>
 
-          {/* PROGRESS */}
-          <View style={styles.progressCard}>
-            <View style={styles.progressHeader}>
-              <Text style={styles.progressStep}>Step {step} of 4</Text>
-              <Text style={styles.progressName}>{stepTitles[step - 1]}</Text>
-            </View>
+          {/* STEPPER */}
+          <View style={styles.stepperCard}>
+            {[
+              ["medical-outline", "Doctor"],
+              ["calendar-outline", "Date & Time"],
+              ["person-outline", "Details"],
+              ["checkmark-done-outline", "Review"],
+            ].map(([icon, label], index) => {
+              const item = index + 1;
+              const active = item === step;
+              const done = completed[index];
 
-            <View style={styles.progressTrack}>
-              <View
-                style={[
-                  styles.progressFill,
-                  { width: `${step * 25}%` },
-                ]}
-              />
-            </View>
-
-            <View style={styles.progressDots}>
-              {[1, 2, 3, 4].map((item) => {
-                const done = item < step;
-                const active = item === step;
-
-                return (
+              return (
+                <React.Fragment key={label}>
                   <TouchableOpacity
-                    key={item}
+                    style={styles.stepperItem}
                     disabled={item > step}
                     onPress={() => item < step && setStep(item)}
-                    style={styles.progressDotWrap}
                   >
                     <View
                       style={[
-                        styles.progressDot,
-                        done && styles.progressDotDone,
-                        active && styles.progressDotActive,
+                        styles.stepCircle,
+                        active && styles.stepCircleActive,
+                        done && styles.stepCircleDone,
                       ]}
                     >
                       {done ? (
-                        <Ionicons name="checkmark" size={12} color={WHITE} />
+                        <Ionicons name="checkmark" size={15} color={WHITE} />
                       ) : (
-                        <Text
-                          style={[
-                            styles.progressDotText,
-                            active && styles.progressDotTextActive,
-                          ]}
-                        >
-                          {item}
-                        </Text>
+                        <Ionicons
+                          name={icon as any}
+                          size={15}
+                          color={active ? GREEN : "#87928B"}
+                        />
                       )}
                     </View>
+
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.stepLabel,
+                        active && styles.stepLabelActive,
+                      ]}
+                    >
+                      {label}
+                    </Text>
                   </TouchableOpacity>
-                );
-              })}
-            </View>
+
+                  {index < 3 && (
+                    <View
+                      style={[
+                        styles.stepLine,
+                        done && styles.stepLineDone,
+                      ]}
+                    />
+                  )}
+                </React.Fragment>
+              );
+            })}
           </View>
 
           {/* ACTIVE STEP */}
-          <View style={styles.mainCard}>
+          <Animated.View
+            style={[
+              styles.panel,
+              {
+                opacity: stepAnim,
+                transform: [
+                  {
+                    translateX: stepAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
             {step === 1 && (
-              <DoctorStep
-                doctors={doctors}
-                loading={doctorLoading}
-                selected={selectedDoctor}
-                onSelect={selectDoctor}
-                onRetry={loadDoctors}
-              />
+              <View>
+                <SectionHeading
+                  eyebrow="STEP 1 OF 4"
+                  title="Choose Your Doctor"
+                  text="Select a doctor who is available for online consultation."
+                />
+
+                {doctorLoading ? (
+                  <LoadingBox text="Loading online consultation doctors..." />
+                ) : !doctors.length ? (
+                  <EmptyCard
+                    icon="videocam-off-outline"
+                    title="No Doctors Available"
+                    text="No online consultation doctors are currently available."
+                    onRetry={loadDoctors}
+                  />
+                ) : (
+                  <View style={styles.doctorList}>
+                    {doctors.map((doctor) => (
+                      <DoctorCard
+                        key={String(doctor.id)}
+                        doctor={doctor}
+                        selected={selectedDoctor?.id === doctor.id}
+                        onPress={() => selectDoctor(doctor)}
+                      />
+                    ))}
+                  </View>
+                )}
+
+                <NavigationButtons
+                  backText="Back"
+                  nextText="Continue"
+                  onBack={() => router.replace("/consultation" as any)}
+                  onNext={nextFromDoctor}
+                />
+              </View>
             )}
 
             {step === 2 && (
-              <ScheduleStep
-                doctor={selectedDoctor}
-                preferredDate={preferredDate}
-                showDatePicker={showDatePicker}
-                onOpenDatePicker={() => setShowDatePicker(true)}
-                onDateSelected={handleDateSelected}
-                onSelectQuickDate={loadAvailableSlots}
-                slots={slots}
-                loading={slotLoading}
-                selectedSlot={selectedSlot}
-                onSelectSlot={setSelectedSlot}
-                slotIsAvailable={slotIsAvailable}
-              />
+              <View>
+                <SectionHeading
+                  eyebrow="STEP 2 OF 4"
+                  title="Choose Date & Time"
+                  text="Select your preferred date to view the doctor’s available online consultation slots."
+                />
+
+                {selectedDoctor && (
+                  <View style={styles.selectedDoctorCard}>
+                    <DoctorImage doctor={selectedDoctor} />
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.selectedEyebrow}>SELECTED DOCTOR</Text>
+                      <Text style={styles.selectedName}>
+                        {selectedDoctor.name || "Doctor"}
+                      </Text>
+                      <Text style={styles.selectedSpec}>
+                        {selectedDoctor.specialization ||
+                          selectedDoctor.qualification ||
+                          "Online Consultation"}
+                      </Text>
+                    </View>
+
+                    <Ionicons
+                      name="videocam"
+                      size={21}
+                      color={SUCCESS}
+                    />
+                  </View>
+                )}
+
+                <Text style={styles.fieldLabel}>
+  CONSULTATION DATE
+</Text>
+
+<TouchableOpacity
+  style={styles.datePickerButton}
+  activeOpacity={0.85}
+  onPress={() => setShowDatePicker(true)}
+>
+  <View style={styles.dateIconBox}>
+    <Ionicons
+      name="calendar-outline"
+      size={20}
+      color={GOLD_DARK}
+    />
+  </View>
+
+  <View style={{ flex: 1 }}>
+    <Text style={styles.dateSmallLabel}>
+      PREFERRED DATE
+    </Text>
+
+    <Text
+      style={[
+        styles.dateValue,
+        !preferredDate &&
+          styles.datePlaceholder,
+      ]}
+    >
+      {preferredDate
+        ? formatDate(preferredDate)
+        : "Tap to choose a date"}
+    </Text>
+  </View>
+
+  <Ionicons
+    name="chevron-down"
+    size={18}
+    color={GREEN}
+  />
+</TouchableOpacity>
+
+{preferredDate ? (
+  <View style={styles.selectedDateInfo}>
+    <Ionicons
+      name="checkmark-circle"
+      size={16}
+      color={SUCCESS}
+    />
+
+    <Text style={styles.selectedDateText}>
+      {formatDate(preferredDate)} selected
+    </Text>
+  </View>
+) : (
+  <Text style={styles.dateHelpText}>
+    Choose today or any future date
+  </Text>
+)}
+
+{showDatePicker && (
+  <DateTimePicker
+    value={
+      preferredDate
+        ? new Date(
+            `${preferredDate}T12:00:00`
+          )
+        : new Date()
+    }
+    mode="date"
+    display={
+      Platform.OS === "android"
+        ? "calendar"
+        : "spinner"
+    }
+    minimumDate={new Date()}
+    onChange={handleDateSelected}
+  />
+)}
+
+                <View style={styles.slotHeader}>
+                  <Text style={styles.fieldLabel}>AVAILABLE TIME SLOTS</Text>
+
+                  {slots.length > 0 && (
+                    <Text style={styles.slotCount}>
+                      {slots.filter(slotIsAvailable).length} available
+                    </Text>
+                  )}
+                </View>
+
+                <View style={styles.slotGrid}>
+                  {slotLoading ? (
+                    <LoadingBox text="Checking online slots..." compact />
+                  ) : !preferredDate ? (
+                    <EmptyInline
+                      icon="calendar-outline"
+                      text="Enter a consultation date to view available slots."
+                    />
+                  ) : !slots.length ? (
+                    <EmptyInline
+                      icon="time-outline"
+                      text="No online consultation slots are available for this date."
+                    />
+                  ) : (
+                    slots.map((slot, index) => {
+                      const available = slotIsAvailable(slot);
+                      const selected =
+                        normalizeApiTime(selectedSlot?.startTime || "") ===
+                        normalizeApiTime(slot.startTime || "");
+
+                      return (
+                        <TouchableOpacity
+                          key={String(slot.id || `${slot.startTime}-${index}`)}
+                          disabled={!available}
+                          style={[
+                            styles.slotButton,
+                            selected && styles.slotSelected,
+                            !available && styles.slotDisabled,
+                          ]}
+                          onPress={() => setSelectedSlot(slot)}
+                        >
+                          <Ionicons
+                            name="videocam-outline"
+                            size={14}
+                            color={
+                              selected
+                                ? WHITE
+                                : available
+                                ? GREEN
+                                : "#A1AAA4"
+                            }
+                          />
+
+                          <Text
+                            style={[
+                              styles.slotText,
+                              selected && styles.slotTextSelected,
+                              !available && styles.slotTextDisabled,
+                            ]}
+                          >
+                            {formatTime(slot.startTime)}
+                            {slot.endTime
+                              ? `\n${formatTime(slot.endTime)}`
+                              : ""}
+                          </Text>
+
+                          {!available && (
+                            <Text style={styles.unavailableText}>
+                              Unavailable
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </View>
+
+                <NavigationButtons
+                  backText="Previous"
+                  nextText="Continue"
+                  onBack={() => setStep(1)}
+                  onNext={nextFromSlot}
+                />
+              </View>
             )}
 
             {step === 3 && (
-              <PatientStep
-                patient={patient}
-                medicalReports={medicalReports}
-                onUpdate={updatePatient}
-                onPickReports={pickMedicalReports}
-                onRemoveReport={removeMedicalReport}
-              />
+              <View>
+                <SectionHeading
+                  eyebrow="STEP 3 OF 4"
+                  title="Patient Details"
+                  text="Your saved profile details are filled automatically when available."
+                />
+
+                <FormField
+                  icon="person-outline"
+                  label="Patient Name"
+                  placeholder="Enter patient name"
+                  value={patient.patientName}
+                  onChangeText={(value) =>
+                    updatePatient("patientName", value)
+                  }
+                />
+
+                <FormField
+                  icon="calendar-number-outline"
+                  label="Age"
+                  placeholder="Enter age"
+                  value={patient.age}
+                  keyboardType="number-pad"
+                  maxLength={3}
+                  onChangeText={(value) =>
+                    updatePatient("age", value.replace(/\D/g, ""))
+                  }
+                />
+
+                <Text style={styles.fieldLabel}>GENDER</Text>
+
+                <View style={styles.genderRow}>
+                  {[
+                    ["MALE", "Male", "male-outline"],
+                    ["FEMALE", "Female", "female-outline"],
+                    ["OTHER", "Other", "person-outline"],
+                  ].map(([value, label, icon]) => {
+                    const active = patient.gender === value;
+
+                    return (
+                      <TouchableOpacity
+                        key={value}
+                        style={[
+                          styles.genderChip,
+                          active && styles.genderChipActive,
+                        ]}
+                        onPress={() => updatePatient("gender", value)}
+                      >
+                        <Ionicons
+                          name={icon as any}
+                          size={15}
+                          color={active ? WHITE : GREEN}
+                        />
+                        <Text
+                          style={[
+                            styles.genderText,
+                            active && styles.genderTextActive,
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <FormField
+                  icon="call-outline"
+                  label="Phone Number"
+                  placeholder="Enter 10-digit mobile number"
+                  value={patient.phoneNumber}
+                  keyboardType="phone-pad"
+                  maxLength={10}
+                  onChangeText={(value) =>
+                    updatePatient(
+                      "phoneNumber",
+                      value.replace(/\D/g, "").slice(0, 10)
+                    )
+                  }
+                />
+
+                <Text style={styles.fieldLabel}>SYMPTOMS / HEALTH CONCERN</Text>
+
+                <TextArea
+                  value={patient.symptoms}
+                  placeholder="Describe symptoms and health concerns"
+                  onChangeText={(value) =>
+                    updatePatient("symptoms", value)
+                  }
+                />
+
+                <Text style={styles.fieldLabel}>PAST MEDICAL HISTORY</Text>
+
+                <TextArea
+                  value={patient.pastMedicalHistory}
+                  placeholder="Previous illnesses, surgeries or treatments (optional)"
+                  onChangeText={(value) =>
+                    updatePatient("pastMedicalHistory", value)
+                  }
+                />
+
+                <Text style={styles.fieldLabel}>CURRENT MEDICATION</Text>
+
+                <TextArea
+                  value={patient.currentMedication}
+                  placeholder="Mention any medicines you are currently taking (optional)"
+                  onChangeText={(value) =>
+                    updatePatient("currentMedication", value)
+                  }
+                  compact
+                />
+
+                <Text style={styles.fieldLabel}>MEDICAL REPORTS</Text>
+
+                <View style={styles.uploadCard}>
+                  <View style={styles.uploadIcon}>
+                    <Ionicons
+                      name="document-attach-outline"
+                      size={26}
+                      color={GOLD_DARK}
+                    />
+                  </View>
+
+                  <Text style={styles.uploadTitle}>
+                    Add Previous Medical Reports
+                  </Text>
+
+                  <Text style={styles.uploadText}>
+                    PDF, JPG or PNG · Maximum 10 files · Up to 10 MB each
+                  </Text>
+
+                  <TouchableOpacity
+                    style={styles.uploadButton}
+                    onPress={pickMedicalReports}
+                  >
+                    <Ionicons name="add-outline" size={17} color={GREEN} />
+                    <Text style={styles.uploadButtonText}>
+                      Choose Reports
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {medicalReports.length > 0 && (
+                  <View style={styles.fileList}>
+                    {medicalReports.map((file, index) => (
+                      <View key={`${file.uri}-${index}`} style={styles.fileItem}>
+                        <View style={styles.fileIcon}>
+                          <Ionicons
+                            name={
+                              String(file.mimeType).includes("pdf")
+                                ? "document-text-outline"
+                                : "image-outline"
+                            }
+                            size={17}
+                            color={GREEN}
+                          />
+                        </View>
+
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.fileName} numberOfLines={1}>
+                            {file.name}
+                          </Text>
+                          <Text style={styles.fileSize}>
+                            {formatFileSize(file.size)}
+                          </Text>
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.fileRemove}
+                          onPress={() => removeMedicalReport(index)}
+                        >
+                          <Ionicons name="close" size={16} color={DANGER} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                <View style={styles.privacyCard}>
+                  <Ionicons
+                    name="shield-checkmark-outline"
+                    size={19}
+                    color={GREEN}
+                  />
+                  <Text style={styles.privacyText}>
+                    Your health details are sent only with this consultation
+                    request so the doctor can understand your concern better.
+                  </Text>
+                </View>
+
+                <NavigationButtons
+                  backText="Previous"
+                  nextText="Review Request"
+                  onBack={() => setStep(2)}
+                  onNext={nextFromPatient}
+                />
+              </View>
             )}
 
             {step === 4 && (
-              <ReviewStep
-                doctor={selectedDoctor}
-                date={preferredDate}
-                startTime={selectedStartTime}
-                endTime={selectedEndTime}
-                patient={patient}
-                reportCount={medicalReports.length}
-              />
-            )}
-          </View>
+              <View>
+                <SectionHeading
+                  eyebrow="STEP 4 OF 4"
+                  title="Review Your Request"
+                  text="Check the details before sending your consultation request to the doctor."
+                />
 
-          {/* BOTTOM NAV */}
-          <View style={styles.bottomActions}>
-            {step > 1 && (
-              <TouchableOpacity
-                style={styles.backButton}
-                onPress={() => setStep(step - 1)}
-              >
-                <Ionicons name="arrow-back" size={17} color={GREEN} />
-                <Text style={styles.backButtonText}>Back</Text>
-              </TouchableOpacity>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryHeading}>
+                    Consultation Summary
+                  </Text>
+
+                  <SummaryRow
+                    label="Type"
+                    value="Online Consultation"
+                  />
+                  <SummaryRow
+                    label="Doctor"
+                    value={
+                      selectedDoctor?.specialization
+                        ? `${selectedDoctor?.name} · ${selectedDoctor?.specialization}`
+                        : selectedDoctor?.name || "-"
+                    }
+                  />
+                  <SummaryRow
+                    label="Date"
+                    value={formatDate(preferredDate)}
+                  />
+                  <SummaryRow
+                    label="Time"
+                    value={
+                      selectedEndTime
+                        ? `${formatTime(selectedStartTime)} - ${formatTime(
+                            selectedEndTime
+                          )}`
+                        : formatTime(selectedStartTime)
+                    }
+                  />
+                  <SummaryRow
+                    label="Patient"
+                    value={patient.patientName}
+                  />
+                  <SummaryRow
+                    label="Phone"
+                    value={patient.phoneNumber}
+                  />
+                  <SummaryRow
+                    label="Symptoms"
+                    value={patient.symptoms}
+                  />
+                  <SummaryRow
+                    label="Reports"
+                    value={
+                      medicalReports.length
+                        ? `${medicalReports.length} file(s) selected`
+                        : "No files selected"
+                    }
+                    last
+                  />
+
+                  <TouchableOpacity
+                    style={styles.editButton}
+                    onPress={() => setStep(3)}
+                  >
+                    <Ionicons name="create-outline" size={16} color={GREEN} />
+                    <Text style={styles.editButtonText}>Edit Details</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.requestCard}>
+                  <View style={styles.requestHeader}>
+                    <View>
+                      <Text style={styles.requestEyebrow}>REQUEST STATUS</Text>
+                      <Text style={styles.requestTitle}>Send to Doctor</Text>
+                    </View>
+
+                    <View style={styles.videoCircle}>
+                      <Ionicons name="videocam" size={22} color={GOLD} />
+                    </View>
+                  </View>
+
+                  <View style={styles.pendingBadge}>
+                    <Ionicons name="time-outline" size={15} color={GOLD_LIGHT} />
+                    <Text style={styles.pendingText}>
+                      Pending Doctor Confirmation
+                    </Text>
+                  </View>
+
+                  <Text style={styles.requestText}>
+                    The doctor can accept your requested slot or reschedule the
+                    online consultation.
+                  </Text>
+
+                  <View style={styles.paymentLaterCard}>
+                    <Ionicons name="wallet-outline" size={19} color={GOLD} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.paymentLaterTitle}>
+                        No payment required now
+                      </Text>
+                      <Text style={styles.paymentLaterText}>
+                        After doctor confirmation, you will be asked to pay ₹200.
+                      </Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.submitButton,
+                      submitting && styles.submitButtonDisabled,
+                    ]}
+                    onPress={submitOnlineConsultation}
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <ActivityIndicator size="small" color={GREEN} />
+                    ) : (
+                      <Ionicons
+                        name="paper-plane-outline"
+                        size={18}
+                        color={GREEN}
+                      />
+                    )}
+
+                    <Text style={styles.submitButtonText}>
+                      {submitting
+                        ? "Sending Request..."
+                        : "Send Request to Doctor"}
+                    </Text>
+
+                    {!submitting && (
+                      <Ionicons
+                        name="arrow-forward"
+                        size={17}
+                        color={GREEN}
+                      />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
             )}
+          </Animated.View>
+
+          {/* REASSURANCE */}
+          <View style={styles.helpCard}>
+            <View style={styles.helpIcon}>
+              <Ionicons name="heart-circle-outline" size={25} color={GOLD} />
+            </View>
+
+            <Text style={styles.helpEyebrow}>COMFORTABLE CARE FROM HOME</Text>
+
+            <Text style={styles.helpTitle}>
+              Need Help With Your Request?
+            </Text>
+
+            <Text style={styles.helpText}>
+              Our team can help you choose a doctor, slot or understand the
+              online consultation process.
+            </Text>
 
             <TouchableOpacity
-              activeOpacity={0.88}
-              disabled={submitting}
-              style={[
-                styles.continueButton,
-                step === 1 && styles.continueButtonFull,
-                submitting && styles.buttonDisabled,
-              ]}
-              onPress={() => {
-                if (step === 1) nextFromDoctor();
-                else if (step === 2) nextFromSlot();
-                else if (step === 3) nextFromPatient();
-                else submitOnlineConsultation();
-              }}
+              style={styles.helpButton}
+              onPress={() =>
+                openURL(
+                  "https://wa.me/919481489866?text=Hello%20NeoLife%20Wellness%20Center,%20I%20need%20help%20with%20online%20consultation."
+                )
+              }
             >
-              {submitting ? (
-                <ActivityIndicator size="small" color={GREEN} />
-              ) : (
-                <>
-                  <Text style={styles.continueButtonText}>
-                    {step === 4 ? "Send Request to Doctor" : "Continue"}
-                  </Text>
-                  <Ionicons
-                    name={step === 4 ? "paper-plane-outline" : "arrow-forward"}
-                    size={18}
-                    color={GREEN}
-                  />
-                </>
-              )}
+              <Ionicons name="logo-whatsapp" size={18} color={GREEN} />
+              <Text style={styles.helpButtonText}>Chat With NeoLife</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.safeStrip}>
-            <Ionicons name="shield-checkmark-outline" size={17} color={GREEN} />
-            <Text style={styles.safeText}>
-              Your health information is sent securely with this request.
+          {/* SAME FOOTER */}
+          <View style={styles.footer}>
+            <Image
+              source={require("../assets/images/main_logo.jpeg")}
+              style={styles.footerLogo}
+            />
+
+            <Text style={styles.footerBrand}>NeoLife Wellness Center</Text>
+
+            <Text style={styles.footerTagline}>
+              Natural healing, Ayurvedic care and trusted wellness support for a
+              healthier life.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.footerRow}
+              onPress={() => openURL("tel:+919481489866")}
+            >
+              <Ionicons name="call-outline" size={17} color={GOLD} />
+              <Text style={styles.footerText}>+91 94814 89866</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.footerRow}
+              onPress={() =>
+                openURL("mailto:neelavar.murali@gmail.com")
+              }
+            >
+              <Ionicons name="mail-outline" size={17} color={GOLD} />
+              <Text style={styles.footerText}>
+                neelavar.murali@gmail.com
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={styles.footerAddress}>
+              4-1-38, Behind Lions Bhavan Road, Nairkere 1st Cross,
+              Brahmagiri, Ambalapady Post, Udupi – 576103, Karnataka, India
+            </Text>
+
+            <View style={styles.socialRow}>
+              <Social
+                icon="logo-facebook"
+                onPress={() =>
+                  openURL(
+                    "https://www.facebook.com/profile.php?id=61575580360517"
+                  )
+                }
+              />
+              <Social
+                icon="logo-instagram"
+                onPress={() =>
+                  openURL("https://www.instagram.com/neolives_global")
+                }
+              />
+              <Social
+                icon="logo-youtube"
+                onPress={() =>
+                  openURL(
+                    "https://www.youtube.com/@NeolifeWellnessCenterUdupi-o7x"
+                  )
+                }
+              />
+              <Social
+                icon="logo-whatsapp"
+                onPress={() => openURL("https://wa.me/919481489866")}
+              />
+            </View>
+
+            <Text style={styles.copyright}>
+              © 2026 NeoLife Wellness Center. All Rights Reserved.
             </Text>
           </View>
-
-          <View style={{ height: 28 }} />
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <PatientDrawer
-        visible={menuOpen}
-        onClose={() => setMenuOpen(false)}
-      />
+      {/* FLOATING WHATSAPP */}
+      <TouchableOpacity
+        style={styles.whatsapp}
+        onPress={() => openURL("https://wa.me/919481489866")}
+      >
+        <Ionicons name="logo-whatsapp" size={28} color={WHITE} />
+      </TouchableOpacity>
 
+      {/* SHARED PATIENT DRAWER */}
+<PatientDrawer
+  visible={menuOpen}
+  onClose={() => setMenuOpen(false)}
+/>
+
+      {/* BRANDED NOTICE */}
       <Modal
         visible={notice.visible}
         transparent
@@ -1068,7 +1841,10 @@ export default function OnlineConsultationScreen() {
         onRequestClose={closeNotice}
       >
         <View style={styles.noticeRoot}>
-          <Pressable style={styles.noticeBackdrop} onPress={closeNotice} />
+          <Pressable
+            style={styles.noticeBackdrop}
+            onPress={closeNotice}
+          />
 
           <View style={styles.noticeCard}>
             <View
@@ -1104,7 +1880,10 @@ export default function OnlineConsultationScreen() {
             <Text style={styles.noticeTitle}>{notice.title}</Text>
             <Text style={styles.noticeMessage}>{notice.message}</Text>
 
-            <TouchableOpacity style={styles.noticeButton} onPress={closeNotice}>
+            <TouchableOpacity
+              style={styles.noticeButton}
+              onPress={closeNotice}
+            >
               <Text style={styles.noticeButtonText}>
                 {notice.action === "login"
                   ? "Go to Login"
@@ -1112,7 +1891,8 @@ export default function OnlineConsultationScreen() {
                   ? "My Appointments"
                   : "Okay"}
               </Text>
-              <Ionicons name="arrow-forward" size={16} color={GREEN} />
+
+              <Ionicons name="arrow-forward" size={17} color={GREEN} />
             </TouchableOpacity>
           </View>
         </View>
@@ -1121,759 +1901,133 @@ export default function OnlineConsultationScreen() {
   );
 }
 
-function DoctorStep({
-  doctors,
-  loading,
-  selected,
-  onSelect,
-  onRetry,
-}: {
-  doctors: Doctor[];
-  loading: boolean;
-  selected: Doctor | null;
-  onSelect: (doctor: Doctor) => void;
-  onRetry: () => void;
-}) {
-  return (
-    <View>
-      <StepHeading
-        title="Choose your doctor"
-        text="Select one doctor available for online consultation."
-      />
-
-      {loading ? (
-        <InlineState loading text="Loading online doctors..." />
-      ) : !doctors.length ? (
-        <InlineState
-          icon="videocam-off-outline"
-          title="No doctors available"
-          text="No online consultation doctors are available right now."
-          action="Try Again"
-          onAction={onRetry}
-        />
-      ) : (
-        <View style={styles.doctorList}>
-          {doctors.map((doctor) => {
-            const active = selected?.id === doctor.id;
-            const experience =
-              doctor.experience ?? doctor.experienceYears;
-
-            return (
-              <TouchableOpacity
-                key={String(doctor.id)}
-                activeOpacity={0.88}
-                style={[
-                  styles.doctorCard,
-                  active && styles.doctorCardSelected,
-                ]}
-                onPress={() => onSelect(doctor)}
-              >
-                <DoctorImage doctor={doctor} />
-
-                <View style={styles.doctorInfo}>
-                  <Text style={styles.doctorName}>
-                    {doctor.name || "Doctor"}
-                  </Text>
-
-                  {!!doctor.specialization && (
-                    <Text style={styles.doctorSpecialization}>
-                      {doctor.specialization}
-                    </Text>
-                  )}
-
-                  <View style={styles.doctorMetaRow}>
-                    {!!doctor.qualification && (
-                      <Text style={styles.doctorMeta}>
-                        {doctor.qualification}
-                      </Text>
-                    )}
-
-                    {!!experience && (
-                      <>
-                        <Text style={styles.metaDot}>•</Text>
-                        <Text style={styles.doctorMeta}>
-                          {String(experience).toLowerCase().includes("year")
-                            ? String(experience)
-                            : `${experience} yrs`}
-                        </Text>
-                      </>
-                    )}
-                  </View>
-
-                  <View style={styles.onlineBadge}>
-                    <Ionicons name="videocam-outline" size={11} color={SUCCESS} />
-                    <Text style={styles.onlineBadgeText}>Online available</Text>
-                  </View>
-                </View>
-
-                <View
-                  style={[
-                    styles.selectCircle,
-                    active && styles.selectCircleActive,
-                  ]}
-                >
-                  {active && (
-                    <Ionicons name="checkmark" size={15} color={WHITE} />
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
-    </View>
-  );
-}
-
-function ScheduleStep({
+function DoctorCard({
   doctor,
-  preferredDate,
-  showDatePicker,
-  onOpenDatePicker,
-  onDateSelected,
-  onSelectQuickDate,
-  slots,
-  loading,
-  selectedSlot,
-  onSelectSlot,
-  slotIsAvailable,
+  selected,
+  onPress,
 }: {
-  doctor: Doctor | null;
-  preferredDate: string;
-  showDatePicker: boolean;
-  onOpenDatePicker: () => void;
-  onDateSelected: (event: any, selectedDate?: Date) => void;
-  onSelectQuickDate: (date: string) => void;
-  slots: Slot[];
-  loading: boolean;
-  selectedSlot: Slot | null;
-  onSelectSlot: (slot: Slot) => void;
-  slotIsAvailable: (slot: Slot) => boolean;
+  doctor: Doctor;
+  selected: boolean;
+  onPress: () => void;
 }) {
-  const availableCount = slots.filter(slotIsAvailable).length;
-
-  const today = getLocalDateString(0);
-  const tomorrow = getLocalDateString(1);
-
-  const isToday = preferredDate === today;
-  const isTomorrow = preferredDate === tomorrow;
-  const isCustom =
-    !!preferredDate && !isToday && !isTomorrow;
+  const experience = doctor.experience;
 
   return (
-    <View>
-      <StepHeading
-        title="Choose date & time"
-        text="Today is selected automatically. Choose tomorrow or use the calendar for another date."
-      />
+    <TouchableOpacity
+      style={[
+        styles.doctorCard,
+        selected && styles.doctorCardSelected,
+      ]}
+      onPress={onPress}
+      activeOpacity={0.88}
+    >
+      <DoctorImage doctor={doctor} />
 
-      {!!doctor && (
-        <View style={styles.selectedDoctorMini}>
-          <DoctorImage doctor={doctor} small />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.doctorName}>
+          {doctor.name || "Doctor"}
+        </Text>
 
-          <View style={{ flex: 1 }}>
-            <Text style={styles.selectedDoctorLabel}>YOUR DOCTOR</Text>
-            <Text style={styles.selectedDoctorName}>
-              {doctor.name || "Doctor"}
-            </Text>
-          </View>
+        {!!doctor.qualification && (
+          <Text style={styles.doctorMeta}>{doctor.qualification}</Text>
+        )}
 
-          <Ionicons name="videocam" size={19} color={SUCCESS} />
-        </View>
-      )}
-
-      <Text style={styles.fieldLabel}>CONSULTATION DATE</Text>
-
-      <View style={styles.quickDateRow}>
-        <TouchableOpacity
-          activeOpacity={0.86}
-          style={[
-            styles.quickDateCard,
-            isToday && styles.quickDateCardActive,
-          ]}
-          onPress={() => onSelectQuickDate(today)}
-        >
-          <View
-            style={[
-              styles.quickDateIcon,
-              isToday && styles.quickDateIconActive,
-            ]}
-          >
-            <Ionicons
-              name="today-outline"
-              size={18}
-              color={isToday ? WHITE : GREEN}
-            />
-          </View>
-
-          <Text
-            style={[
-              styles.quickDateTitle,
-              isToday && styles.quickDateTitleActive,
-            ]}
-          >
-            Today
-          </Text>
-
-          <Text
-            style={[
-              styles.quickDateValue,
-              isToday && styles.quickDateValueActive,
-            ]}
-          >
-            {formatQuickDate(today)}
-          </Text>
-
-          {isToday && (
-            <View style={styles.quickSelectedBadge}>
-              <Ionicons name="checkmark" size={10} color={GREEN} />
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          activeOpacity={0.86}
-          style={[
-            styles.quickDateCard,
-            isTomorrow && styles.quickDateCardActive,
-          ]}
-          onPress={() => onSelectQuickDate(tomorrow)}
-        >
-          <View
-            style={[
-              styles.quickDateIcon,
-              isTomorrow && styles.quickDateIconActive,
-            ]}
-          >
-            <Ionicons
-              name="arrow-forward-outline"
-              size={18}
-              color={isTomorrow ? WHITE : GREEN}
-            />
-          </View>
-
-          <Text
-            style={[
-              styles.quickDateTitle,
-              isTomorrow && styles.quickDateTitleActive,
-            ]}
-          >
-            Tomorrow
-          </Text>
-
-          <Text
-            style={[
-              styles.quickDateValue,
-              isTomorrow && styles.quickDateValueActive,
-            ]}
-          >
-            {formatQuickDate(tomorrow)}
-          </Text>
-
-          {isTomorrow && (
-            <View style={styles.quickSelectedBadge}>
-              <Ionicons name="checkmark" size={10} color={GREEN} />
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          activeOpacity={0.86}
-          style={[
-            styles.quickDateCard,
-            isCustom && styles.quickDateCardActive,
-          ]}
-          onPress={onOpenDatePicker}
-        >
-          <View
-            style={[
-              styles.quickDateIcon,
-              isCustom && styles.quickDateIconActive,
-            ]}
-          >
-            <Ionicons
-              name="calendar-outline"
-              size={18}
-              color={isCustom ? WHITE : GREEN}
-            />
-          </View>
-
-          <Text
-            style={[
-              styles.quickDateTitle,
-              isCustom && styles.quickDateTitleActive,
-            ]}
-          >
-            Calendar
-          </Text>
-
-          <Text
-            style={[
-              styles.quickDateValue,
-              isCustom && styles.quickDateValueActive,
-            ]}
-          >
-            Other date
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.selectedDateBar}>
-        <View style={styles.selectedDateIcon}>
-          <Ionicons
-            name="calendar-clear-outline"
-            size={18}
-            color={GREEN}
-          />
-        </View>
-
-        <View style={{ flex: 1 }}>
-          <Text style={styles.selectedDateLabel}>SELECTED DATE</Text>
-          <Text style={styles.selectedDateValue}>
-            {preferredDate
-              ? formatDateWithDay(preferredDate)
-              : "Selecting today..."}
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.calendarEditButton}
-          onPress={onOpenDatePicker}
-        >
-          <Ionicons name="create-outline" size={16} color={GREEN} />
-        </TouchableOpacity>
-      </View>
-
-      {showDatePicker && (
-        <DateTimePicker
-          value={
-            preferredDate
-              ? new Date(`${preferredDate}T12:00:00`)
-              : new Date()
-          }
-          mode="date"
-          display={Platform.OS === "android" ? "calendar" : "spinner"}
-          minimumDate={new Date()}
-          onChange={onDateSelected}
-        />
-      )}
-
-      <View style={styles.slotTitleRow}>
-        <Text style={styles.fieldLabel}>AVAILABLE TIMES</Text>
-
-        {!!preferredDate && !loading && (
-          <Text style={styles.slotCount}>
-            {availableCount} available
+        {!!doctor.specialization && (
+          <Text style={styles.doctorSpecialization}>
+            {doctor.specialization}
           </Text>
         )}
+
+        {!!experience && (
+          <Text style={styles.doctorExperience}>
+            {`${experience}${
+              String(experience).toLowerCase().includes("year")
+                ? ""
+                : " Years Experience"
+            }`}
+          </Text>
+        )}
+
+        <View style={styles.onlineBadge}>
+          <Ionicons name="videocam-outline" size={12} color={SUCCESS} />
+          <Text style={styles.onlineBadgeText}>
+            Online Consultation Available
+          </Text>
+        </View>
       </View>
 
-      {loading ? (
-        <InlineState
-          loading
-          text="Checking available consultation times..."
-          compact
-        />
-      ) : !preferredDate ? (
-        <InlineState
-          icon="calendar-outline"
-          text="Today's available consultation times will appear here."
-          compact
-        />
-      ) : availableCount === 0 ? (
-        <InlineState
-          icon="time-outline"
-          title="No times available"
-          text="No online consultation times are available for this date. Try tomorrow or choose another date."
-          compact
-        />
-      ) : (
-        <View style={styles.slotGrid}>
-          {slots.map((slot, index) => {
-            const available = slotIsAvailable(slot);
-            if (!available) return null;
-
-            const start =
-              slot.startTime ||
-              slot.time ||
-              slot.slotTime ||
-              "";
-
-            const end =
-              slot.endTime ||
-              slot.toTime ||
-              "";
-
-            const active =
-              normalizeApiTime(
-                selectedSlot?.startTime ||
-                  selectedSlot?.time ||
-                  selectedSlot?.slotTime ||
-                  ""
-              ) === normalizeApiTime(start);
-
-            return (
-              <TouchableOpacity
-                key={String(
-                  slot.id ||
-                    slot.appointmentSlotId ||
-                    `${start}-${index}`
-                )}
-                activeOpacity={0.86}
-                style={[
-                  styles.slotButton,
-                  active && styles.slotButtonSelected,
-                ]}
-                onPress={() => onSelectSlot(slot)}
-              >
-                <Ionicons
-                  name="videocam-outline"
-                  size={14}
-                  color={active ? WHITE : GREEN}
-                />
-
-                <Text
-                  style={[
-                    styles.slotText,
-                    active && styles.slotTextSelected,
-                  ]}
-                >
-                  {formatTime(start)}
-                </Text>
-
-                {!!end && (
-                  <Text
-                    style={[
-                      styles.slotEndText,
-                      active && styles.slotEndTextSelected,
-                    ]}
-                  >
-                    to {formatTime(end)}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
-    </View>
+      <View
+        style={[
+          styles.selectCircle,
+          selected && styles.selectCircleSelected,
+        ]}
+      >
+        {selected && (
+          <Ionicons name="checkmark" size={15} color={WHITE} />
+        )}
+      </View>
+    </TouchableOpacity>
   );
 }
 
-function PatientStep({
-  patient,
-  medicalReports,
-  onUpdate,
-  onPickReports,
-  onRemoveReport,
-}: {
-  patient: PatientForm;
-  medicalReports: MedicalFile[];
-  onUpdate: <K extends keyof PatientForm>(
-    key: K,
-    value: PatientForm[K]
-  ) => void;
-  onPickReports: () => void;
-  onRemoveReport: (index: number) => void;
-}) {
+function DoctorImage({ doctor }: { doctor: Doctor }) {
+  const uri = getDoctorImageUrl(doctor);
+
+  if (!uri) {
+    return (
+      <Image
+        source={require("../assets/images/main_logo.jpeg")}
+        style={styles.doctorImage}
+      />
+    );
+  }
+
   return (
-    <View>
-      <StepHeading
-        title="Tell the doctor about your concern"
-        text="Your saved profile details are prefilled when available."
-      />
-
-      <FormField
-        label="Patient name"
-        icon="person-outline"
-        value={patient.patientName}
-        placeholder="Enter patient name"
-        onChangeText={(value) => onUpdate("patientName", value)}
-      />
-
-      <View style={styles.twoColumn}>
-        <View style={{ flex: 1 }}>
-          <FormField
-            label="Age"
-            icon="calendar-number-outline"
-            value={patient.age}
-            placeholder="Age"
-            keyboardType="number-pad"
-            maxLength={3}
-            onChangeText={(value) =>
-              onUpdate("age", value.replace(/\D/g, ""))
-            }
-          />
-        </View>
-
-        <View style={{ flex: 1 }}>
-          <FormField
-            label="Phone"
-            icon="call-outline"
-            value={patient.phoneNumber}
-            placeholder="10 digits"
-            keyboardType="phone-pad"
-            maxLength={10}
-            onChangeText={(value) =>
-              onUpdate(
-                "phoneNumber",
-                value.replace(/\D/g, "").slice(0, 10)
-              )
-            }
-          />
-        </View>
-      </View>
-
-      <Text style={styles.fieldLabel}>GENDER</Text>
-
-      <View style={styles.genderRow}>
-        {[
-          ["MALE", "Male"],
-          ["FEMALE", "Female"],
-          ["OTHER", "Other"],
-        ].map(([value, label]) => {
-          const active = patient.gender === value;
-
-          return (
-            <TouchableOpacity
-              key={value}
-              activeOpacity={0.86}
-              style={[
-                styles.genderButton,
-                active && styles.genderButtonSelected,
-              ]}
-              onPress={() => onUpdate("gender", value)}
-            >
-              <Text
-                style={[
-                  styles.genderButtonText,
-                  active && styles.genderButtonTextSelected,
-                ]}
-              >
-                {label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      <Text style={styles.fieldLabel}>SYMPTOMS / HEALTH CONCERN</Text>
-
-      <TextArea
-        value={patient.symptoms}
-        placeholder="Briefly describe the main concern"
-        onChangeText={(value) => onUpdate("symptoms", value)}
-      />
-
-      <Text style={styles.fieldLabel}>PAST MEDICAL HISTORY · OPTIONAL</Text>
-
-      <TextArea
-        value={patient.pastMedicalHistory}
-        placeholder="Previous illness, surgery or treatment"
-        onChangeText={(value) =>
-          onUpdate("pastMedicalHistory", value)
-        }
-      />
-
-      <Text style={styles.fieldLabel}>CURRENT MEDICATION · OPTIONAL</Text>
-
-      <TextArea
-        value={patient.currentMedication}
-        placeholder="Medicines currently being taken"
-        onChangeText={(value) =>
-          onUpdate("currentMedication", value)
-        }
-        compact
-      />
-
-      <View style={styles.reportHeader}>
-        <View>
-          <Text style={styles.fieldLabel}>MEDICAL REPORTS · OPTIONAL</Text>
-          <Text style={styles.reportHint}>
-            PDF, JPG or PNG · up to 10 files
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          activeOpacity={0.86}
-          style={styles.addReportButton}
-          onPress={onPickReports}
-        >
-          <Ionicons name="add" size={17} color={GREEN} />
-          <Text style={styles.addReportText}>Add</Text>
-        </TouchableOpacity>
-      </View>
-
-      {!!medicalReports.length && (
-        <View style={styles.fileList}>
-          {medicalReports.map((file, index) => (
-            <View key={`${file.uri}-${index}`} style={styles.fileItem}>
-              <View style={styles.fileIcon}>
-                <Ionicons
-                  name={
-                    String(file.mimeType).includes("pdf")
-                      ? "document-text-outline"
-                      : "image-outline"
-                  }
-                  size={17}
-                  color={GREEN}
-                />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fileName} numberOfLines={1}>
-                  {file.name}
-                </Text>
-                <Text style={styles.fileSize}>
-                  {formatFileSize(file.size)}
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.removeFileButton}
-                onPress={() => onRemoveReport(index)}
-              >
-                <Ionicons name="close" size={16} color={DANGER} />
-              </TouchableOpacity>
-            </View>
-          ))}
-        </View>
-      )}
-    </View>
+    <Image
+      source={{ uri }}
+      style={styles.doctorImage}
+      defaultSource={require("../assets/images/main_logo.jpeg")}
+    />
   );
 }
 
-function ReviewStep({
-  doctor,
-  date,
-  startTime,
-  endTime,
-  patient,
-  reportCount,
-}: {
-  doctor: Doctor | null;
-  date: string;
-  startTime: string;
-  endTime: string;
-  patient: PatientForm;
-  reportCount: number;
-}) {
-  return (
-    <View>
-      <StepHeading
-        title="Review your request"
-        text="Check everything before sending it to the doctor."
-      />
-
-      <View style={styles.reviewDoctor}>
-        {doctor && <DoctorImage doctor={doctor} small />}
-
-        <View style={{ flex: 1 }}>
-          <Text style={styles.reviewLabel}>DOCTOR</Text>
-          <Text style={styles.reviewDoctorName}>
-            {doctor?.name || "Doctor"}
-          </Text>
-          {!!doctor?.specialization && (
-            <Text style={styles.reviewDoctorSpec}>
-              {doctor.specialization}
-            </Text>
-          )}
-        </View>
-      </View>
-
-      <View style={styles.reviewGrid}>
-        <ReviewTile
-          icon="calendar-outline"
-          label="DATE"
-          value={formatDate(date)}
-        />
-
-        <ReviewTile
-          icon="videocam-outline"
-          label="TIME"
-          value={
-            endTime
-              ? `${formatTime(startTime)} - ${formatTime(endTime)}`
-              : formatTime(startTime)
-          }
-        />
-      </View>
-
-      <View style={styles.reviewSection}>
-        <Text style={styles.reviewSectionTitle}>Patient</Text>
-        <ReviewRow label="Name" value={patient.patientName} />
-        <ReviewRow label="Phone" value={patient.phoneNumber} />
-        <ReviewRow label="Age" value={patient.age} />
-        <ReviewRow label="Gender" value={patient.gender} />
-      </View>
-
-      <View style={styles.reviewSection}>
-        <Text style={styles.reviewSectionTitle}>Health concern</Text>
-        <Text style={styles.reviewLongText}>{patient.symptoms}</Text>
-      </View>
-
-      <View style={styles.reviewSection}>
-        <Text style={styles.reviewSectionTitle}>Medical reports</Text>
-        <Text style={styles.reviewLongText}>
-          {reportCount
-            ? `${reportCount} file${reportCount > 1 ? "s" : ""} attached`
-            : "No files attached"}
-        </Text>
-      </View>
-
-      <View style={styles.requestInfoCard}>
-        <View style={styles.requestInfoIcon}>
-          <Ionicons name="time-outline" size={20} color={GREEN} />
-        </View>
-
-        <View style={{ flex: 1 }}>
-          <Text style={styles.requestInfoTitle}>
-            No payment required now
-          </Text>
-          <Text style={styles.requestInfoText}>
-            The doctor will first accept or reschedule your request. You pay ₹200
-            only after confirmation.
-          </Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-function StepHeading({
+function SectionHeading({
+  eyebrow,
   title,
   text,
 }: {
+  eyebrow: string;
   title: string;
   text: string;
 }) {
   return (
-    <View style={styles.stepHeading}>
-      <Text style={styles.stepHeadingTitle}>{title}</Text>
-      <Text style={styles.stepHeadingText}>{text}</Text>
+    <View style={{ marginBottom: 18 }}>
+      <Text style={styles.eyebrow}>{eyebrow}</Text>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={styles.sectionText}>{text}</Text>
     </View>
   );
 }
 
 function FormField({
-  label,
   icon,
-  value,
+  label,
   placeholder,
+  value,
   onChangeText,
   keyboardType,
   maxLength,
 }: {
-  label: string;
   icon: any;
-  value: string;
+  label: string;
   placeholder: string;
+  value: string;
   onChangeText: (value: string) => void;
   keyboardType?: any;
   maxLength?: number;
 }) {
   return (
-    <View style={styles.fieldGroup}>
+    <View style={{ marginBottom: 15 }}>
       <Text style={styles.fieldLabel}>{label.toUpperCase()}</Text>
 
       <View style={styles.inputWrap}>
@@ -1908,7 +2062,7 @@ function TextArea({
     <View
       style={[
         styles.textAreaWrap,
-        compact && styles.textAreaWrapCompact,
+        compact && { minHeight: 90 },
       ]}
     >
       <TextInput
@@ -1920,115 +2074,131 @@ function TextArea({
         textAlignVertical="top"
         style={[
           styles.textArea,
-          compact && styles.textAreaCompact,
+          compact && { minHeight: 90 },
         ]}
       />
     </View>
   );
 }
 
-function InlineState({
-  loading = false,
-  icon = "information-circle-outline",
-  title,
+function NavigationButtons({
+  backText,
+  nextText,
+  onBack,
+  onNext,
+}: {
+  backText: string;
+  nextText: string;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <View style={styles.navButtons}>
+      <TouchableOpacity style={styles.backButton} onPress={onBack}>
+        <Ionicons name="arrow-back" size={17} color={GREEN} />
+        <Text style={styles.backButtonText}>{backText}</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.nextButton} onPress={onNext}>
+        <Text style={styles.nextButtonText}>{nextText}</Text>
+        <Ionicons name="arrow-forward" size={17} color={GREEN} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function SummaryRow({
+  label,
+  value,
+  last = false,
+}: {
+  label: string;
+  value: string;
+  last?: boolean;
+}) {
+  return (
+    <View
+      style={[
+        styles.summaryRow,
+        last && { borderBottomWidth: 0 },
+      ]}
+    >
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={styles.summaryValue}>{value || "-"}</Text>
+    </View>
+  );
+}
+
+function LoadingBox({
   text,
-  action,
-  onAction,
   compact = false,
 }: {
-  loading?: boolean;
-  icon?: any;
-  title?: string;
   text: string;
-  action?: string;
-  onAction?: () => void;
   compact?: boolean;
 }) {
   return (
-    <View style={[styles.inlineState, compact && styles.inlineStateCompact]}>
-      {loading ? (
-        <ActivityIndicator size="small" color={GREEN} />
-      ) : (
-        <View style={styles.inlineStateIcon}>
-          <Ionicons name={icon} size={22} color={GREEN} />
-        </View>
-      )}
-
-      {!!title && <Text style={styles.inlineStateTitle}>{title}</Text>}
-      <Text style={styles.inlineStateText}>{text}</Text>
-
-      {!!action && !!onAction && (
-        <TouchableOpacity style={styles.inlineAction} onPress={onAction}>
-          <Text style={styles.inlineActionText}>{action}</Text>
-        </TouchableOpacity>
-      )}
+    <View
+      style={[
+        styles.loadingBox,
+        compact && { minHeight: 90 },
+      ]}
+    >
+      <ActivityIndicator size="small" color={GREEN} />
+      <Text style={styles.loadingBoxText}>{text}</Text>
     </View>
   );
 }
 
-function ReviewTile({
+function EmptyCard({
   icon,
-  label,
-  value,
+  title,
+  text,
+  onRetry,
 }: {
   icon: any;
-  label: string;
-  value: string;
+  title: string;
+  text: string;
+  onRetry: () => void;
 }) {
   return (
-    <View style={styles.reviewTile}>
-      <Ionicons name={icon} size={19} color={GREEN} />
-      <Text style={styles.reviewTileLabel}>{label}</Text>
-      <Text style={styles.reviewTileValue}>{value}</Text>
+    <View style={styles.emptyCard}>
+      <Ionicons name={icon} size={30} color={GOLD_DARK} />
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptyText}>{text}</Text>
+
+      <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
+        <Text style={styles.retryText}>Try Again</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
-function ReviewRow({
-  label,
-  value,
+function EmptyInline({
+  icon,
+  text,
 }: {
-  label: string;
-  value: string;
+  icon: any;
+  text: string;
 }) {
   return (
-    <View style={styles.reviewRow}>
-      <Text style={styles.reviewRowLabel}>{label}</Text>
-      <Text style={styles.reviewRowValue}>{value || "-"}</Text>
+    <View style={styles.emptyInline}>
+      <Ionicons name={icon} size={20} color={GOLD_DARK} />
+      <Text style={styles.emptyInlineText}>{text}</Text>
     </View>
   );
 }
 
-function DoctorImage({
-  doctor,
-  small = false,
+function Social({
+  icon,
+  onPress,
 }: {
-  doctor: Doctor;
-  small?: boolean;
+  icon: any;
+  onPress: () => void;
 }) {
-  const uri = getDoctorImageUrl(doctor);
-
-  if (!uri) {
-    return (
-      <Image
-        source={require("../assets/images/main_logo.jpeg")}
-        style={[
-          styles.doctorImage,
-          small && styles.doctorImageSmall,
-        ]}
-      />
-    );
-  }
-
   return (
-    <Image
-      source={{ uri }}
-      style={[
-        styles.doctorImage,
-        small && styles.doctorImageSmall,
-      ]}
-      defaultSource={require("../assets/images/main_logo.jpeg")}
-    />
+    <TouchableOpacity style={styles.socialButton} onPress={onPress}>
+      <Ionicons name={icon} size={20} color={WHITE} />
+    </TouchableOpacity>
   );
 }
 
@@ -2051,38 +2221,42 @@ function getDoctorImageUrl(doctor: Doctor) {
     return value;
   }
 
-  const origin = API_BASE_URL.replace(/\/api\/?$/, "");
+  const apiOrigin = API_BASE_URL.replace(/\/api\/?$/, "");
 
   if (value.startsWith("/uploads/")) {
-    return `${origin}${value}`;
+    return `${apiOrigin}${value}`;
   }
 
   if (value.startsWith("uploads/")) {
-    return `${origin}/${value}`;
+    return `${apiOrigin}/${value}`;
   }
 
   if (value.startsWith("/")) {
-    return `${origin}${value}`;
+    return `${API_BASE_URL}${value}`;
   }
 
-  return `${origin}/${value}`;
+  return `${API_BASE_URL}/${value}`;
 }
 
-function normalizeApiTime(value: string) {
+function normalizeApiTime(value?: string) {
   if (!value) return "";
 
   const parts = String(value).split(":");
+
   if (parts.length < 2) return value;
 
-  return `${String(parts[0]).padStart(2, "0")}:${String(
-    parts[1]
-  ).padStart(2, "0")}`;
+  const hh = String(parts[0]).padStart(2, "0");
+  const mm = String(parts[1]).padStart(2, "0");
+  const ss = String(parts[2] || "00").padStart(2, "0");
+
+  return `${hh}:${mm}:${ss}`;
 }
 
 function formatTime(value?: string) {
   if (!value) return "-";
 
   const parts = String(value).split(":");
+
   if (parts.length < 2) return value;
 
   const hour = Number(parts[0]);
@@ -2098,74 +2272,16 @@ function formatTime(value?: string) {
   return `${displayHour}:${String(minute).padStart(2, "0")} ${period}`;
 }
 
-function formatDate(value?: string) {
+function formatDate(value: string) {
   if (!value) return "-";
 
-  const date = new Date(`${value}T12:00:00`);
+  const date = new Date(`${value}T00:00:00`);
 
   if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
-    year: "numeric",
-  });
-}
-
-function formatFileSize(size?: number | null) {
-  if (!size) return "File attached";
-
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
-
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function guessMimeType(name: string) {
-  const lower = String(name || "").toLowerCase();
-
-  if (lower.endsWith(".pdf")) return "application/pdf";
-  if (lower.endsWith(".png")) return "image/png";
-  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
-    return "image/jpeg";
-  }
-
-  return "application/octet-stream";
-}
-
-function getLocalDateString(offsetDays = 0) {
-  const date = new Date();
-  date.setHours(12, 0, 0, 0);
-  date.setDate(date.getDate() + offsetDays);
-
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-}
-
-function formatQuickDate(value: string) {
-  const date = new Date(`${value}T12:00:00`);
-
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleDateString("en-IN", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-  });
-}
-
-function formatDateWithDay(value: string) {
-  const date = new Date(`${value}T12:00:00`);
-
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleDateString("en-IN", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
     year: "numeric",
   });
 }
@@ -2180,1101 +2296,1141 @@ function startOfToday() {
   ).getTime();
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: CREAM,
-  },
+function guessMimeType(name: string) {
+  const lower = name.toLowerCase();
 
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".png")) return "image/png";
+
+  return "image/jpeg";
+}
+
+function formatFileSize(size?: number | null) {
+  if (!size) return "Selected file";
+
+  if (size < 1024 * 1024) {
+    return `${Math.max(1, Math.round(size / 1024))} KB`;
+  }
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const styles = StyleSheet.create({
   loader: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: CREAM,
   },
-
   loaderText: {
     marginTop: 10,
     fontFamily: "DMSans_500Medium",
     color: MUTED,
     fontSize: 11,
   },
-
-  scrollContent: {
-    flexGrow: 1,
-  },
-
-  pageIntro: {
-    paddingHorizontal: 18,
-    paddingTop: 17,
-  },
-
-  backLink: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    marginLeft: -5,
-  },
-
-  backLinkText: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 11,
-  },
-
-  introRow: {
-    marginTop: 17,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  eyebrow: {
-    fontFamily: "DMSans_700Bold",
-    color: GOLD_DARK,
-    fontSize: 8,
-    letterSpacing: 1.1,
-  },
-
-  pageTitle: {
-    marginTop: 4,
-    fontFamily: "PlayfairDisplay_700Bold",
-    color: GREEN,
-    fontSize: 30,
-    lineHeight: 35,
-  },
-
-  pageSubtitle: {
-    marginTop: 5,
-    maxWidth: 300,
-    fontFamily: "DMSans_400Regular",
-    color: MUTED,
-    fontSize: 11,
-    lineHeight: 17,
-  },
-
-  priceBadge: {
-    width: 88,
-    paddingHorizontal: 7,
-    paddingVertical: 9,
-    borderRadius: 17,
-    alignItems: "center",
-    backgroundColor: "#FFF5D8",
-    borderWidth: 1,
-    borderColor: "#E9D9A7",
-  },
-
-  priceTop: {
-    fontFamily: "DMSans_700Bold",
-    color: MUTED,
-    fontSize: 5,
-    letterSpacing: 0.5,
-    textAlign: "center",
-  },
-
-  price: {
-    marginTop: 2,
-    fontFamily: "PlayfairDisplay_700Bold",
-    color: GREEN,
-    fontSize: 23,
-  },
-
-  noPayStrip: {
-    marginTop: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: MINT,
-  },
-
-  noPayText: {
+  screen: {
     flex: 1,
-    fontFamily: "DMSans_500Medium",
-    color: GREEN_2,
-    fontSize: 9,
-    lineHeight: 14,
+    backgroundColor: CREAM,
   },
 
-  progressCard: {
-    marginTop: 16,
-    marginHorizontal: 16,
-    padding: 14,
-    borderRadius: 19,
+  header: {
+    minHeight: 72,
+    paddingTop: Platform.OS === "web" ? 12 : 44,
+    paddingBottom: 11,
+    paddingHorizontal: 15,
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: WHITE,
-    borderWidth: 1,
-    borderColor: BORDER,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ECEDE9",
+    zIndex: 50,
   },
-
-  progressHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  progressStep: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 10,
-  },
-
-  progressName: {
-    fontFamily: "DMSans_500Medium",
-    color: MUTED,
-    fontSize: 9,
-  },
-
-  progressTrack: {
-    marginTop: 10,
-    height: 5,
-    borderRadius: 3,
-    overflow: "hidden",
-    backgroundColor: MINT,
-  },
-
-  progressFill: {
-    height: "100%",
-    borderRadius: 3,
-    backgroundColor: GOLD,
-  },
-
-  progressDots: {
-    marginTop: 11,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-
-  progressDotWrap: {
-    flex: 1,
-    alignItems: "center",
-  },
-
-  progressDot: {
-    width: 25,
-    height: 25,
-    borderRadius: 9,
+  iconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: MINT,
   },
-
-  progressDotDone: {
+  brandWrap: {
+    flex: 1,
+    marginHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  logo: {
+    width: 40,
+    height: 40,
+    marginRight: 9,
+    borderRadius: 14,
+  },
+  brandName: {
+    fontFamily: "DMSans_700Bold",
+    color: GREEN,
+    fontSize: 17,
+  },
+  brandSmall: {
+    marginTop: 1,
+    fontFamily: "DMSans_500Medium",
+    color: MUTED,
+    fontSize: 10,
+    letterSpacing: 0.6,
+  },
+  profileButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: GREEN,
   },
-
-  progressDotActive: {
-    backgroundColor: GOLD,
-  },
-
-  progressDotText: {
+  profileLetter: {
     fontFamily: "DMSans_700Bold",
-    color: MUTED,
-    fontSize: 9,
+    color: WHITE,
+    fontSize: 15,
   },
 
-  progressDotTextActive: {
-    color: GREEN,
+  hero: {
+    margin: 16,
+    minHeight: 390,
+    padding: 24,
+    borderRadius: 31,
+    overflow: "hidden",
+    justifyContent: "center",
+    backgroundColor: GREEN,
+  },
+  heroOrb1: {
+    position: "absolute",
+    width: 245,
+    height: 245,
+    right: -100,
+    top: -100,
+    borderRadius: 123,
+    backgroundColor: "rgba(214,180,91,.16)",
+  },
+  heroOrb2: {
+    position: "absolute",
+    width: 170,
+    height: 170,
+    left: -65,
+    bottom: -75,
+    borderRadius: 85,
+    backgroundColor: "rgba(255,255,255,.06)",
+  },
+  heroBadge: {
+    alignSelf: "flex-start",
+    minHeight: 35,
+    paddingHorizontal: 11,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,.08)",
+  },
+  heroBadgeText: {
+    fontFamily: "DMSans_700Bold",
+    color: GOLD_LIGHT,
+    fontSize: 8,
+    letterSpacing: 1,
+  },
+  heroTitle: {
+    marginTop: 20,
+    fontFamily: "PlayfairDisplay_700Bold",
+    color: WHITE,
+    fontSize: 38,
+    lineHeight: 43,
+  },
+  heroAccent: {
+    color: GOLD_LIGHT,
+  },
+  heroText: {
+    marginTop: 12,
+    maxWidth: 335,
+    fontFamily: "DMSans_400Regular",
+    color: "#D8E6DD",
+    fontSize: 11,
+    lineHeight: 18,
+  },
+  heroInfo: {
+    marginTop: 20,
+    padding: 11,
+    borderRadius: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(255,255,255,.08)",
+  },
+  heroInfoIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,.08)",
+  },
+  heroInfoText: {
+    flex: 1,
+    fontFamily: "DMSans_700Bold",
+    color: WHITE,
+    fontSize: 7,
+    lineHeight: 12,
   },
 
-  mainCard: {
-    marginTop: 15,
+  stepperCard: {
     marginHorizontal: 16,
-    padding: 17,
-    borderRadius: 23,
+    minHeight: 86,
+    paddingHorizontal: 10,
+    borderRadius: 22,
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: WHITE,
     borderWidth: 1,
     borderColor: BORDER,
-    elevation: 2,
-    shadowColor: GREEN,
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
+  },
+  stepperItem: {
+    width: 55,
+    alignItems: "center",
+  },
+  stepCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EEF1EF",
+  },
+  stepCircleActive: {
+    backgroundColor: GOLD,
+  },
+  stepCircleDone: {
+    backgroundColor: GREEN,
+  },
+  stepLabel: {
+    marginTop: 5,
+    fontFamily: "DMSans_500Medium",
+    color: MUTED,
+    fontSize: 6,
+    textAlign: "center",
+  },
+  stepLabelActive: {
+    fontFamily: "DMSans_700Bold",
+    color: GREEN,
+  },
+  stepLine: {
+    flex: 1,
+    height: 2,
+    marginHorizontal: 1,
+    marginBottom: 18,
+    backgroundColor: "#E1E6E2",
+  },
+  stepLineDone: {
+    backgroundColor: GREEN,
   },
 
-  stepHeading: {
-    marginBottom: 17,
+  panel: {
+    marginTop: 22,
+    marginHorizontal: 16,
+    padding: 17,
+    borderRadius: 27,
+    backgroundColor: WHITE,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
-
-  stepHeadingTitle: {
+  eyebrow: {
+    fontFamily: "DMSans_700Bold",
+    color: GOLD_DARK,
+    fontSize: 8,
+    letterSpacing: 1.3,
+  },
+  sectionTitle: {
+    marginTop: 5,
     fontFamily: "PlayfairDisplay_700Bold",
     color: GREEN,
-    fontSize: 24,
-    lineHeight: 29,
+    fontSize: 27,
+    lineHeight: 32,
   },
-
-  stepHeadingText: {
-    marginTop: 5,
+  sectionText: {
+    marginTop: 6,
     fontFamily: "DMSans_400Regular",
     color: MUTED,
-    fontSize: 10,
-    lineHeight: 16,
+    fontSize: 9,
+    lineHeight: 15,
   },
 
   doctorList: {
     gap: 10,
   },
-
   doctorCard: {
-    padding: 11,
-    borderRadius: 18,
+    padding: 12,
+    borderRadius: 19,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: CREAM,
+    gap: 11,
+    backgroundColor: "#FBFCFA",
     borderWidth: 1,
     borderColor: BORDER,
   },
-
   doctorCardSelected: {
-    backgroundColor: MINT,
-    borderColor: GREEN,
+    backgroundColor: "#FFF9E8",
+    borderColor: GOLD,
   },
-
   doctorImage: {
-    width: 58,
-    height: 58,
-    borderRadius: 17,
+    width: 66,
+    height: 66,
+    borderRadius: 20,
     backgroundColor: MINT,
   },
-
-  doctorImageSmall: {
-    width: 45,
-    height: 45,
-    borderRadius: 14,
-  },
-
-  doctorInfo: {
-    flex: 1,
-    marginLeft: 11,
-  },
-
   doctorName: {
-    fontFamily: "DMSans_700Bold",
+    fontFamily: "PlayfairDisplay_700Bold",
     color: GREEN,
-    fontSize: 12,
+    fontSize: 16,
   },
-
+  doctorMeta: {
+    marginTop: 3,
+    fontFamily: "DMSans_500Medium",
+    color: MUTED,
+    fontSize: 7,
+  },
   doctorSpecialization: {
     marginTop: 2,
-    fontFamily: "DMSans_500Medium",
-    color: TEXT,
-    fontSize: 9,
+    fontFamily: "DMSans_700Bold",
+    color: GOLD_DARK,
+    fontSize: 7,
   },
-
-  doctorMetaRow: {
-    marginTop: 4,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  doctorMeta: {
+  doctorExperience: {
+    marginTop: 3,
     fontFamily: "DMSans_400Regular",
     color: MUTED,
-    fontSize: 8,
+    fontSize: 7,
   },
-
-  metaDot: {
-    marginHorizontal: 5,
-    color: GOLD_DARK,
-    fontSize: 8,
-  },
-
   onlineBadge: {
     alignSelf: "flex-start",
     marginTop: 5,
+    minHeight: 24,
     paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 10,
+    borderRadius: 8,
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#EAF7EE",
+    backgroundColor: SUCCESS_LIGHT,
   },
-
   onlineBadgeText: {
     fontFamily: "DMSans_700Bold",
     color: SUCCESS,
-    fontSize: 7,
+    fontSize: 6,
   },
-
   selectCircle: {
     width: 25,
     height: 25,
-    borderRadius: 13,
-    borderWidth: 2,
-    borderColor: "#CCD6D0",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  selectCircleActive: {
-    borderColor: GREEN,
-    backgroundColor: GREEN,
-  },
-
-  selectedDoctorMini: {
-    marginBottom: 16,
-    padding: 10,
-    borderRadius: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: MINT,
-  },
-
-  selectedDoctorLabel: {
-    fontFamily: "DMSans_700Bold",
-    color: GOLD_DARK,
-    fontSize: 7,
-    letterSpacing: 0.7,
-  },
-
-  selectedDoctorName: {
-    marginTop: 2,
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 11,
-  },
-
-  fieldGroup: {
-    marginBottom: 14,
-  },
-
-  fieldLabel: {
-    marginBottom: 7,
-    fontFamily: "DMSans_700Bold",
-    color: "#6E7A73",
-    fontSize: 8,
-    letterSpacing: 0.75,
-  },
-
-  quickDateRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-
-  quickDateCard: {
-    flex: 1,
-    minHeight: 104,
-    paddingHorizontal: 8,
-    paddingVertical: 10,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-    backgroundColor: CREAM,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-
-  quickDateCardActive: {
-    backgroundColor: MINT,
-    borderColor: GREEN,
-  },
-
-  quickDateIcon: {
-    width: 34,
-    height: 34,
-    marginBottom: 7,
-    borderRadius: 11,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: MINT,
-  },
-
-  quickDateIconActive: {
-    backgroundColor: GREEN,
-  },
-
-  quickDateTitle: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 9,
-    textAlign: "center",
-  },
-
-  quickDateTitleActive: {
-    color: GREEN,
-  },
-
-  quickDateValue: {
-    marginTop: 3,
-    fontFamily: "DMSans_400Regular",
-    color: MUTED,
-    fontSize: 7,
-    textAlign: "center",
-  },
-
-  quickDateValueActive: {
-    color: GREEN_2,
-  },
-
-  quickSelectedBadge: {
-    position: "absolute",
-    top: 7,
-    right: 7,
-    width: 18,
-    height: 18,
     borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "#CCD6CF",
+  },
+  selectCircleSelected: {
+    borderColor: GOLD,
     backgroundColor: GOLD,
   },
 
-  selectedDateBar: {
-    marginTop: 11,
-    minHeight: 61,
-    paddingHorizontal: 11,
-    borderRadius: 16,
+  selectedDoctorCard: {
+    marginBottom: 17,
+    padding: 12,
+    borderRadius: 18,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: WHITE,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-
-  selectedDateIcon: {
-    width: 38,
-    height: 38,
-    marginRight: 10,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
+    gap: 11,
     backgroundColor: MINT,
   },
-
-  selectedDateLabel: {
+  selectedEyebrow: {
     fontFamily: "DMSans_700Bold",
     color: GOLD_DARK,
+    fontSize: 6,
+    letterSpacing: 0.8,
+  },
+  selectedName: {
+    marginTop: 3,
+    fontFamily: "PlayfairDisplay_700Bold",
+    color: GREEN,
+    fontSize: 16,
+  },
+  selectedSpec: {
+    marginTop: 2,
+    fontFamily: "DMSans_400Regular",
+    color: MUTED,
     fontSize: 7,
-    letterSpacing: 0.7,
   },
 
-  selectedDateValue: {
-    marginTop: 3,
+  fieldLabel: {
+    marginTop: 14,
+    marginBottom: 7,
     fontFamily: "DMSans_700Bold",
     color: GREEN,
-    fontSize: 10,
+    fontSize: 7,
+    letterSpacing: 1,
   },
-
-  calendarEditButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: MINT,
-  },
-
-  dateButton: {
-    minHeight: 62,
-    paddingHorizontal: 11,
+  inputWrap: {
+    minHeight: 52,
+    paddingHorizontal: 12,
     borderRadius: 16,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: CREAM,
+    gap: 8,
+    backgroundColor: "#FBFCFA",
     borderWidth: 1,
     borderColor: BORDER,
   },
+  input: {
+    flex: 1,
+    fontFamily: "DMSans_500Medium",
+    color: TEXT,
+    fontSize: 10,
+  },
+  inputHint: {
+    marginTop: 5,
+    fontFamily: "DMSans_400Regular",
+    color: MUTED,
+    fontSize: 7,
+  },
+  datePickerButton: {
+  minHeight: 68,
+  padding: 10,
+  borderRadius: 17,
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 10,
+  backgroundColor: "#FBFCFA",
+  borderWidth: 1,
+  borderColor: BORDER,
+},
 
-  dateIcon: {
-    width: 39,
-    height: 39,
-    marginRight: 10,
+dateIconBox: {
+  width: 44,
+  height: 44,
+  borderRadius: 14,
+  alignItems: "center",
+  justifyContent: "center",
+  backgroundColor: "#FFF7E3",
+},
+
+dateSmallLabel: {
+  fontFamily: "DMSans_700Bold",
+  color: GOLD_DARK,
+  fontSize: 6.5,
+  letterSpacing: 0.8,
+},
+
+dateValue: {
+  marginTop: 4,
+  fontFamily: "DMSans_700Bold",
+  color: GREEN,
+  fontSize: 11,
+},
+
+datePlaceholder: {
+  color: "#929D96",
+  fontFamily: "DMSans_500Medium",
+},
+
+selectedDateInfo: {
+  alignSelf: "flex-start",
+  marginTop: 8,
+  minHeight: 31,
+  paddingHorizontal: 10,
+  borderRadius: 10,
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 5,
+  backgroundColor: SUCCESS_LIGHT,
+},
+
+selectedDateText: {
+  fontFamily: "DMSans_700Bold",
+  color: SUCCESS,
+  fontSize: 7.5,
+},
+
+dateHelpText: {
+  marginTop: 7,
+  fontFamily: "DMSans_400Regular",
+  color: MUTED,
+  fontSize: 7,
+},
+
+  slotHeader: {
+    marginTop: 5,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+  },
+  slotCount: {
+    marginBottom: 7,
+    fontFamily: "DMSans_700Bold",
+    color: SUCCESS,
+    fontSize: 7,
+  },
+  slotGrid: {
+    minHeight: 110,
+    padding: 10,
+    borderRadius: 17,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    backgroundColor: "#F8F9F6",
+  },
+  slotButton: {
+    width: "31%",
+    minHeight: 62,
+    padding: 7,
     borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: MINT,
-  },
-
-  dateSmallLabel: {
-    fontFamily: "DMSans_700Bold",
-    color: GOLD_DARK,
-    fontSize: 7,
-    letterSpacing: 0.6,
-  },
-
-  dateValue: {
-    marginTop: 3,
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 11,
-  },
-
-  datePlaceholder: {
-    color: MUTED,
-    fontFamily: "DMSans_400Regular",
-  },
-
-  slotTitleRow: {
-    marginTop: 19,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  slotCount: {
-    fontFamily: "DMSans_500Medium",
-    color: SUCCESS,
-    fontSize: 8,
-  },
-
-  slotGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 9,
-  },
-
-  slotButton: {
-    width: "31%",
-    minHeight: 66,
-    paddingHorizontal: 7,
-    paddingVertical: 8,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: CREAM,
+    backgroundColor: WHITE,
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: "#D9E3DC",
   },
-
-  slotButtonSelected: {
+  slotSelected: {
     backgroundColor: GREEN,
     borderColor: GREEN,
   },
-
+  slotDisabled: {
+    backgroundColor: "#ECEFED",
+    borderColor: "#DEE3E0",
+  },
   slotText: {
     marginTop: 3,
     fontFamily: "DMSans_700Bold",
     color: GREEN,
-    fontSize: 9,
+    fontSize: 7,
+    textAlign: "center",
+    lineHeight: 10,
   },
-
   slotTextSelected: {
     color: WHITE,
   },
-
-  slotEndText: {
+  slotTextDisabled: {
+    color: "#9AA29D",
+  },
+  unavailableText: {
     marginTop: 2,
-    fontFamily: "DMSans_400Regular",
-    color: MUTED,
-    fontSize: 7,
-  },
-
-  slotEndTextSelected: {
-    color: "#D5E5DB",
-  },
-
-  inputWrap: {
-    minHeight: 52,
-    paddingHorizontal: 12,
-    borderRadius: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-    backgroundColor: CREAM,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-
-  input: {
-    flex: 1,
-    fontFamily: "DMSans_400Regular",
-    color: TEXT,
-    fontSize: 11,
-  },
-
-  twoColumn: {
-    flexDirection: "row",
-    gap: 10,
+    fontFamily: "DMSans_700Bold",
+    color: DANGER,
+    fontSize: 5.5,
   },
 
   genderRow: {
-    marginBottom: 15,
     flexDirection: "row",
-    gap: 8,
+    gap: 7,
+    marginBottom: 5,
   },
-
-  genderButton: {
+  genderChip: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 45,
     borderRadius: 14,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: CREAM,
+    gap: 5,
+    backgroundColor: "#F6F8F5",
     borderWidth: 1,
     borderColor: BORDER,
   },
-
-  genderButtonSelected: {
+  genderChipActive: {
     backgroundColor: GREEN,
     borderColor: GREEN,
   },
-
-  genderButtonText: {
+  genderText: {
     fontFamily: "DMSans_700Bold",
     color: GREEN,
-    fontSize: 9,
+    fontSize: 8,
   },
-
-  genderButtonTextSelected: {
+  genderTextActive: {
     color: WHITE,
   },
 
   textAreaWrap: {
-    marginBottom: 15,
-    minHeight: 100,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    borderRadius: 15,
-    backgroundColor: CREAM,
+    minHeight: 110,
+    borderRadius: 16,
+    backgroundColor: "#FBFCFA",
     borderWidth: 1,
     borderColor: BORDER,
   },
-
-  textAreaWrapCompact: {
-    minHeight: 82,
-  },
-
   textArea: {
-    minHeight: 82,
+    minHeight: 110,
+    padding: 12,
     fontFamily: "DMSans_400Regular",
     color: TEXT,
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 10,
+    lineHeight: 16,
   },
 
-  textAreaCompact: {
-    minHeight: 64,
-  },
-
-  reportHeader: {
-    marginTop: 3,
-    flexDirection: "row",
-    justifyContent: "space-between",
+  uploadCard: {
+    padding: 18,
+    borderRadius: 20,
     alignItems: "center",
+    backgroundColor: "#FAFCF9",
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderColor: "#CBD9CF",
   },
-
-  reportHint: {
-    marginTop: -3,
+  uploadIcon: {
+    width: 53,
+    height: 53,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFF7E3",
+  },
+  uploadTitle: {
+    marginTop: 10,
+    fontFamily: "PlayfairDisplay_700Bold",
+    color: GREEN,
+    fontSize: 17,
+  },
+  uploadText: {
+    marginTop: 5,
+    maxWidth: 260,
     fontFamily: "DMSans_400Regular",
     color: MUTED,
-    fontSize: 8,
+    fontSize: 7,
+    lineHeight: 12,
+    textAlign: "center",
   },
-
-  addReportButton: {
-    minHeight: 36,
-    paddingHorizontal: 11,
+  uploadButton: {
+    minHeight: 40,
+    marginTop: 12,
+    paddingHorizontal: 13,
     borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: SOFT_GOLD,
-    borderWidth: 1,
-    borderColor: "#EAD8A2",
+    gap: 5,
+    backgroundColor: GOLD,
   },
-
-  addReportText: {
+  uploadButtonText: {
     fontFamily: "DMSans_700Bold",
     color: GREEN,
     fontSize: 8,
   },
 
   fileList: {
-    marginTop: 12,
-    gap: 8,
+    marginTop: 10,
+    gap: 7,
   },
-
   fileItem: {
-    padding: 9,
+    minHeight: 52,
+    padding: 8,
     borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: CREAM,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-
-  fileIcon: {
-    width: 36,
-    height: 36,
-    marginRight: 9,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
+    gap: 8,
     backgroundColor: MINT,
   },
-
+  fileIcon: {
+    width: 35,
+    height: 35,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: WHITE,
+  },
   fileName: {
     fontFamily: "DMSans_700Bold",
-    color: TEXT,
-    fontSize: 9,
+    color: GREEN,
+    fontSize: 8,
   },
-
   fileSize: {
     marginTop: 2,
     fontFamily: "DMSans_400Regular",
     color: MUTED,
-    fontSize: 7,
+    fontSize: 6.5,
   },
-
-  removeFileButton: {
+  fileRemove: {
     width: 32,
     height: 32,
-    borderRadius: 11,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FBECE9",
+    backgroundColor: DANGER_LIGHT,
   },
 
-  reviewDoctor: {
+  privacyCard: {
+    marginTop: 15,
     padding: 11,
-    borderRadius: 17,
+    borderRadius: 14,
     flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
+    alignItems: "flex-start",
+    gap: 8,
     backgroundColor: MINT,
   },
-
-  reviewLabel: {
-    fontFamily: "DMSans_700Bold",
-    color: GOLD_DARK,
-    fontSize: 7,
-    letterSpacing: 0.7,
-  },
-
-  reviewDoctorName: {
-    marginTop: 2,
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 12,
-  },
-
-  reviewDoctorSpec: {
-    marginTop: 2,
-    fontFamily: "DMSans_400Regular",
-    color: MUTED,
-    fontSize: 8,
-  },
-
-  reviewGrid: {
-    marginTop: 12,
-    flexDirection: "row",
-    gap: 10,
-  },
-
-  reviewTile: {
+  privacyText: {
     flex: 1,
-    minHeight: 91,
-    padding: 12,
-    borderRadius: 16,
-    backgroundColor: CREAM,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-
-  reviewTileLabel: {
-    marginTop: 8,
-    fontFamily: "DMSans_700Bold",
-    color: GOLD_DARK,
-    fontSize: 7,
-    letterSpacing: 0.7,
-  },
-
-  reviewTileValue: {
-    marginTop: 3,
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 9,
-    lineHeight: 14,
-  },
-
-  reviewSection: {
-    marginTop: 13,
-    padding: 13,
-    borderRadius: 16,
-    backgroundColor: CREAM,
-  },
-
-  reviewSectionTitle: {
-    marginBottom: 8,
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 10,
-  },
-
-  reviewRow: {
-    paddingVertical: 6,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
-  },
-
-  reviewRowLabel: {
-    fontFamily: "DMSans_400Regular",
-    color: MUTED,
-    fontSize: 9,
-  },
-
-  reviewRowValue: {
-    flex: 1,
-    textAlign: "right",
-    fontFamily: "DMSans_700Bold",
-    color: TEXT,
-    fontSize: 9,
-  },
-
-  reviewLongText: {
-    fontFamily: "DMSans_400Regular",
-    color: TEXT,
-    fontSize: 10,
-    lineHeight: 16,
-  },
-
-  requestInfoCard: {
-    marginTop: 13,
-    padding: 13,
-    borderRadius: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: SOFT_GOLD,
-    borderWidth: 1,
-    borderColor: "#EBD9A4",
-  },
-
-  requestInfoIcon: {
-    width: 40,
-    height: 40,
-    marginRight: 10,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: WHITE,
-  },
-
-  requestInfoTitle: {
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 10,
-  },
-
-  requestInfoText: {
-    marginTop: 3,
     fontFamily: "DMSans_400Regular",
     color: MUTED,
     fontSize: 8,
     lineHeight: 13,
   },
 
-  inlineState: {
-    minHeight: 165,
-    padding: 20,
-    borderRadius: 17,
+  navButtons: {
+    marginTop: 22,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+    flexDirection: "row",
+    gap: 8,
+  },
+  backButton: {
+    minHeight: 47,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: CREAM,
-  },
-
-  inlineStateCompact: {
-    minHeight: 110,
-  },
-
-  inlineStateIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
+    gap: 6,
     backgroundColor: MINT,
   },
-
-  inlineStateTitle: {
-    marginTop: 10,
-    fontFamily: "DMSans_700Bold",
-    color: GREEN,
-    fontSize: 11,
-  },
-
-  inlineStateText: {
-    marginTop: 5,
-    maxWidth: 260,
-    fontFamily: "DMSans_400Regular",
-    color: MUTED,
-    fontSize: 9,
-    lineHeight: 14,
-    textAlign: "center",
-  },
-
-  inlineAction: {
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 12,
-    backgroundColor: GREEN,
-  },
-
-  inlineActionText: {
-    fontFamily: "DMSans_700Bold",
-    color: WHITE,
-    fontSize: 9,
-  },
-
-  bottomActions: {
-    marginTop: 14,
-    marginHorizontal: 16,
-    flexDirection: "row",
-    gap: 10,
-  },
-
-  backButton: {
-    minHeight: 51,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7,
-    backgroundColor: WHITE,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-
   backButtonText: {
     fontFamily: "DMSans_700Bold",
     color: GREEN,
-    fontSize: 10,
+    fontSize: 8,
   },
-
-  continueButton: {
+  nextButton: {
     flex: 1,
-    minHeight: 51,
-    paddingHorizontal: 16,
-    borderRadius: 16,
+    minHeight: 47,
+    paddingHorizontal: 12,
+    borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
     backgroundColor: GOLD,
   },
-
-  continueButtonFull: {
-    flex: 1,
-  },
-
-  continueButtonText: {
+  nextButtonText: {
     fontFamily: "DMSans_700Bold",
     color: GREEN,
-    fontSize: 10,
-  },
-
-  buttonDisabled: {
-    opacity: 0.65,
-  },
-
-  safeStrip: {
-    marginTop: 13,
-    marginHorizontal: 16,
-    paddingHorizontal: 13,
-    paddingVertical: 11,
-    borderRadius: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: MINT,
-  },
-
-  safeText: {
-    flex: 1,
-    fontFamily: "DMSans_500Medium",
-    color: GREEN_2,
-    fontSize: 8,
-    lineHeight: 13,
-  },
-
-  noticeRoot: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 22,
-  },
-
-  noticeBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(4,31,21,0.72)",
-  },
-
-  noticeCard: {
-    width: "100%",
-    maxWidth: 390,
-    padding: 25,
-    borderRadius: 27,
-    alignItems: "center",
-    backgroundColor: CREAM,
-    borderWidth: 1,
-    borderColor: "#E8D8A7",
-  },
-
-  noticeIcon: {
-    width: 62,
-    height: 62,
-    borderRadius: 21,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  noticeSuccess: {
-    backgroundColor: "#EAF7EE",
-  },
-
-  noticeError: {
-    backgroundColor: "#FBECE9",
-  },
-
-  noticeInfo: {
-    backgroundColor: "#EDF5FA",
-  },
-
-  noticeEyebrow: {
-    marginTop: 14,
-    fontFamily: "DMSans_700Bold",
-    color: GOLD_DARK,
     fontSize: 9,
-    letterSpacing: 1.2,
   },
 
-  noticeTitle: {
-    marginTop: 7,
+  loadingBox: {
+    minHeight: 150,
+    width: "100%",
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F8F9F6",
+  },
+  loadingBoxText: {
+    marginTop: 8,
+    fontFamily: "DMSans_500Medium",
+    color: MUTED,
+    fontSize: 8,
+  },
+  emptyCard: {
+    padding: 24,
+    borderRadius: 20,
+    alignItems: "center",
+    backgroundColor: "#F8F9F6",
+  },
+  emptyTitle: {
+    marginTop: 10,
     fontFamily: "PlayfairDisplay_700Bold",
     color: GREEN,
-    fontSize: 24,
+    fontSize: 18,
+  },
+  emptyText: {
+    marginTop: 5,
+    fontFamily: "DMSans_400Regular",
+    color: MUTED,
+    fontSize: 8,
+    textAlign: "center",
+  },
+  retryButton: {
+    minHeight: 40,
+    marginTop: 13,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    justifyContent: "center",
+    backgroundColor: GOLD,
+  },
+  retryText: {
+    fontFamily: "DMSans_700Bold",
+    color: GREEN,
+    fontSize: 8,
+  },
+  emptyInline: {
+    width: "100%",
+    minHeight: 85,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyInlineText: {
+    marginTop: 6,
+    maxWidth: 235,
+    fontFamily: "DMSans_400Regular",
+    color: MUTED,
+    fontSize: 8,
     textAlign: "center",
   },
 
+  summaryCard: {
+    padding: 15,
+    borderRadius: 21,
+    backgroundColor: "#F8F9F6",
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  summaryHeading: {
+    marginBottom: 7,
+    fontFamily: "PlayfairDisplay_700Bold",
+    color: GREEN,
+    fontSize: 19,
+  },
+  summaryRow: {
+    paddingVertical: 11,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8ECE9",
+  },
+  summaryLabel: {
+    fontFamily: "DMSans_500Medium",
+    color: MUTED,
+    fontSize: 8,
+  },
+  summaryValue: {
+    flex: 1,
+    fontFamily: "DMSans_700Bold",
+    color: GREEN,
+    fontSize: 8,
+    textAlign: "right",
+  },
+  editButton: {
+    minHeight: 43,
+    marginTop: 12,
+    borderRadius: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: MINT,
+  },
+  editButtonText: {
+    fontFamily: "DMSans_700Bold",
+    color: GREEN,
+    fontSize: 8,
+  },
+
+  requestCard: {
+    marginTop: 13,
+    padding: 17,
+    borderRadius: 22,
+    backgroundColor: GREEN,
+  },
+  requestHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  requestEyebrow: {
+    fontFamily: "DMSans_700Bold",
+    color: GOLD_LIGHT,
+    fontSize: 7,
+    letterSpacing: 0.9,
+  },
+  requestTitle: {
+    marginTop: 3,
+    fontFamily: "PlayfairDisplay_700Bold",
+    color: WHITE,
+    fontSize: 20,
+  },
+  videoCircle: {
+    width: 45,
+    height: 45,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,.09)",
+  },
+  pendingBadge: {
+    marginTop: 15,
+    minHeight: 40,
+    paddingHorizontal: 11,
+    borderRadius: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,.08)",
+  },
+  pendingText: {
+    fontFamily: "DMSans_700Bold",
+    color: GOLD_LIGHT,
+    fontSize: 8,
+  },
+  requestText: {
+    marginTop: 12,
+    fontFamily: "DMSans_400Regular",
+    color: "#CBDACF",
+    fontSize: 8,
+    lineHeight: 13,
+  },
+  paymentLaterCard: {
+    marginTop: 12,
+    padding: 11,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: "rgba(255,255,255,.08)",
+  },
+  paymentLaterTitle: {
+    fontFamily: "DMSans_700Bold",
+    color: WHITE,
+    fontSize: 8,
+  },
+  paymentLaterText: {
+    marginTop: 3,
+    fontFamily: "DMSans_400Regular",
+    color: "#CBDACF",
+    fontSize: 7,
+    lineHeight: 12,
+  },
+  submitButton: {
+    minHeight: 50,
+    marginTop: 15,
+    paddingHorizontal: 12,
+    borderRadius: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    backgroundColor: GOLD,
+  },
+  submitButtonDisabled: {
+    opacity: 0.7,
+  },
+  submitButtonText: {
+    flex: 1,
+    fontFamily: "DMSans_700Bold",
+    color: GREEN,
+    fontSize: 9,
+    textAlign: "center",
+  },
+
+  helpCard: {
+    marginTop: 45,
+    marginHorizontal: 16,
+    padding: 25,
+    borderRadius: 28,
+    alignItems: "center",
+    backgroundColor: "#F2E5C0",
+    borderWidth: 1,
+    borderColor: "#E5D09A",
+  },
+  helpIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: GREEN,
+  },
+  helpEyebrow: {
+    marginTop: 14,
+    fontFamily: "DMSans_700Bold",
+    color: GOLD_DARK,
+    fontSize: 8,
+    letterSpacing: 1.2,
+  },
+  helpTitle: {
+    marginTop: 5,
+    fontFamily: "PlayfairDisplay_700Bold",
+    color: GREEN,
+    fontSize: 23,
+    textAlign: "center",
+  },
+  helpText: {
+    marginTop: 7,
+    maxWidth: 310,
+    fontFamily: "DMSans_400Regular",
+    color: MUTED,
+    fontSize: 9,
+    lineHeight: 15,
+    textAlign: "center",
+  },
+  helpButton: {
+    minHeight: 44,
+    marginTop: 16,
+    paddingHorizontal: 15,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    backgroundColor: GOLD,
+  },
+  helpButtonText: {
+    fontFamily: "DMSans_700Bold",
+    color: GREEN,
+    fontSize: 9,
+  },
+
+  footer: {
+    marginTop: 55,
+    paddingTop: 42,
+    paddingBottom: 34,
+    paddingHorizontal: 22,
+    alignItems: "center",
+    backgroundColor: "#0A271A",
+  },
+  footerLogo: {
+    width: 62,
+    height: 62,
+    borderRadius: 21,
+  },
+  footerBrand: {
+    marginTop: 13,
+    fontFamily: "PlayfairDisplay_700Bold",
+    color: WHITE,
+    fontSize: 20,
+  },
+  footerTagline: {
+    marginTop: 8,
+    maxWidth: 420,
+    fontFamily: "DMSans_400Regular",
+    color: "#C6D4CB",
+    textAlign: "center",
+    fontSize: 12,
+    lineHeight: 19,
+  },
+  footerRow: {
+    marginTop: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+  footerText: {
+    fontFamily: "DMSans_500Medium",
+    color: "#E1EAE4",
+    fontSize: 12,
+  },
+  footerAddress: {
+    marginTop: 15,
+    maxWidth: 390,
+    fontFamily: "DMSans_400Regular",
+    color: "#AFC0B6",
+    textAlign: "center",
+    fontSize: 11,
+    lineHeight: 18,
+  },
+  socialRow: {
+    marginTop: 20,
+    flexDirection: "row",
+    gap: 10,
+  },
+  socialButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,.10)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  copyright: {
+    marginTop: 25,
+    fontFamily: "DMSans_400Regular",
+    color: "#81978A",
+    fontSize: 10,
+    textAlign: "center",
+  },
+  whatsapp: {
+    position: "absolute",
+    right: 18,
+    bottom: Platform.OS === "web" ? 20 : 24,
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#20C764",
+    elevation: 8,
+    zIndex: 100,
+  },
+
+  
+
+  noticeRoot: {
+    flex: 1,
+    paddingHorizontal: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  noticeBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(5,28,19,.75)",
+  },
+  noticeCard: {
+    width: "100%",
+    maxWidth: 370,
+    padding: 22,
+    borderRadius: 29,
+    alignItems: "center",
+    backgroundColor: CREAM,
+    borderWidth: 1,
+    borderColor: "rgba(214,180,91,.40)",
+    elevation: 18,
+  },
+  noticeIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  noticeSuccess: {
+    backgroundColor: SUCCESS_LIGHT,
+  },
+  noticeError: {
+    backgroundColor: DANGER_LIGHT,
+  },
+  noticeInfo: {
+    backgroundColor: INFO_LIGHT,
+  },
+  noticeEyebrow: {
+    marginTop: 15,
+    fontFamily: "DMSans_700Bold",
+    color: GOLD_DARK,
+    fontSize: 8,
+    letterSpacing: 1.4,
+  },
+  noticeTitle: {
+    marginTop: 5,
+    fontFamily: "PlayfairDisplay_700Bold",
+    color: GREEN,
+    fontSize: 25,
+    textAlign: "center",
+  },
   noticeMessage: {
     marginTop: 8,
     fontFamily: "DMSans_400Regular",
     color: MUTED,
-    fontSize: 12,
-    lineHeight: 19,
+    fontSize: 10,
+    lineHeight: 16,
     textAlign: "center",
   },
-
   noticeButton: {
-    marginTop: 19,
-    minHeight: 47,
-    paddingHorizontal: 18,
+    width: "100%",
+    minHeight: 48,
+    marginTop: 18,
     borderRadius: 15,
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    justifyContent: "center",
+    gap: 7,
     backgroundColor: GOLD,
   },
-
   noticeButtonText: {
     fontFamily: "DMSans_700Bold",
     color: GREEN,
-    fontSize: 11,
+    fontSize: 10,
   },
 });

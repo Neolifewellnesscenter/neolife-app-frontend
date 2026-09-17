@@ -34,6 +34,8 @@ import {
 } from "react-native";
 
 import { API_BASE_URL } from "../../services/api";
+import DoctorHeader from "../../components/DoctorHeader";
+import DoctorDrawer from "../../components/DoctorDrawer";
 
 /* =========================================================
    COLORS
@@ -111,7 +113,6 @@ type NoticeState = {
 type ConfirmAction =
   | "CONFIRM_APPOINTMENT"
   | "ACCEPT_CONSULTATION"
-  | "LOGOUT"
   | "";
 
 type ConfirmState = {
@@ -122,73 +123,7 @@ type ConfirmState = {
   itemId: string;
 };
 
-type MenuItem = {
-  icon: any;
-  label: string;
-  route: string;
-  section: "MAIN" | "CLINICAL" | "FINANCE";
-  requiresOnline?: boolean;
-  requiresOffline?: boolean;
-};
 
-const MENU_ITEMS: MenuItem[] = [
-  {
-    icon: "grid-outline",
-    label: "Dashboard",
-    route: "/doctor/dashboard",
-    section: "MAIN",
-  },
-  {
-    icon: "people-outline",
-    label: "Patients",
-    route: "/doctor/patients",
-    section: "MAIN",
-  },
-  {
-    icon: "calendar-outline",
-    label: "Appointment Calendar",
-    route: "/doctor/calendar",
-    section: "MAIN",
-  },
-  {
-    icon: "calendar-number-outline",
-    label: "Upcoming Schedule",
-    route: "/doctor/schedule",
-    section: "MAIN",
-  },
-  {
-    icon: "time-outline",
-    label: "Manage Availability",
-    route: "/doctor/availability",
-    section: "MAIN",
-  },
-  {
-    icon: "clipboard-outline",
-    label: "Appointment Details",
-    route: "/doctor/appointments",
-    section: "CLINICAL",
-    requiresOffline: true,
-  },
-  {
-    icon: "videocam-outline",
-    label: "Consultation Details",
-    route: "/doctor/consultations",
-    section: "CLINICAL",
-    requiresOnline: true,
-  },
-  {
-    icon: "card-outline",
-    label: "Transactions",
-    route: "/doctor/transactions",
-    section: "FINANCE",
-  },
-  {
-    icon: "person-circle-outline",
-    label: "My Profile",
-    route: "/doctor/profile",
-    section: "FINANCE",
-  },
-];
 
 /* =========================================================
    SCREEN
@@ -212,8 +147,7 @@ export default function DoctorAppointmentCalendarScreen() {
   const [actionLoading, setActionLoading] = useState(false);
 
   const [doctor, setDoctor] = useState<DoctorProfile>({});
-  const [doctorName, setDoctorName] = useState("Doctor");
-  const [doctorInitial, setDoctorInitial] = useState("D");
+
 
   const [hasOnline, setHasOnline] = useState<boolean | null>(null);
   const [hasOffline, setHasOffline] = useState<boolean | null>(null);
@@ -407,23 +341,14 @@ export default function DoctorAppointmentCalendarScreen() {
      PROFILE / MENU AVAILABILITY
   ======================================================= */
 
-  function doctorInitialFromName(name: string) {
-    const clean = String(name || "Doctor")
-      .replace(/^Dr\.?\s*/i, "")
-      .trim();
-
-    return clean.charAt(0).toUpperCase() || "D";
-  }
+  
 
   async function loadDoctorProfile() {
     const storedName =
       (await AsyncStorage.getItem("doctorName")) ||
       "Doctor";
 
-    setDoctorName(storedName);
-    setDoctorInitial(
-      doctorInitialFromName(storedName)
-    );
+   
 
     try {
       const result = await doctorApiRequest(
@@ -439,10 +364,6 @@ export default function DoctorAppointmentCalendarScreen() {
         storedName;
 
       setDoctor(profile);
-      setDoctorName(name);
-      setDoctorInitial(
-        doctorInitialFromName(name)
-      );
 
       await AsyncStorage.setItem(
         "doctorName",
@@ -724,14 +645,19 @@ export default function DoctorAppointmentCalendarScreen() {
       gender: item.gender || "-",
       type: "ONLINE",
       date: normalizeAppointmentDate(
-        item.consultationDate ||
-        item.date
-      ),
-      time: normalizeAppointmentTime(
-        item.startTime ||
-        item.consultationTime ||
-        item.time
-      ),
+  item.consultationDate ||
+  item.appointmentDate ||
+  item.date ||
+  item.requestedDate
+),
+
+time: normalizeAppointmentTime(
+  item.consultationTime ||
+  item.startTime ||
+  item.appointmentTime ||
+  item.requestedTime ||
+  item.time
+),
       endTime: normalizeAppointmentTime(
         item.endTime
       ),
@@ -777,7 +703,7 @@ export default function DoctorAppointmentCalendarScreen() {
           "/appointments/doctor/my-appointments"
         ),
         doctorApiRequest(
-          "/consultations/doctor/my-consultations"
+          "/consultations/my-consultations"
         ),
         doctorApiRequest(
           "/consultations/doctor/requests"
@@ -956,13 +882,13 @@ export default function DoctorAppointmentCalendarScreen() {
         (item) => item.type === "ONLINE"
       ).length,
       pending: appointments.filter(
-        (item) =>
-          [
-            "PENDING",
-            "PAYMENT_PENDING",
-            "PENDING_DOCTOR_CONFIRMATION",
-          ].includes(item.status)
-      ).length,
+  (item) =>
+    [
+      "PENDING",
+      "PENDING_DOCTOR_CONFIRMATION",
+      "RESCHEDULED",
+    ].includes(item.status)
+).length,
     };
   }, [appointments]);
 
@@ -1157,20 +1083,7 @@ export default function DoctorAppointmentCalendarScreen() {
     try {
       setActionLoading(true);
 
-      if (confirm.action === "LOGOUT") {
-        await clearDoctorSession();
-
-        setConfirm({
-          visible: false,
-          action: "",
-          title: "",
-          message: "",
-          itemId: "",
-        });
-
-        router.replace("/login" as any);
-        return;
-      }
+     
 
       if (
         confirm.action ===
@@ -1472,30 +1385,7 @@ export default function DoctorAppointmentCalendarScreen() {
     });
   }
 
-  /* =======================================================
-     MENU
-  ======================================================= */
-
-  const visibleMenu = useMemo(() => {
-    return MENU_ITEMS.filter((item) => {
-      if (
-        item.requiresOnline &&
-        hasOnline === false
-      ) {
-        return false;
-      }
-
-      if (
-        item.requiresOffline &&
-        hasOffline === false
-      ) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [hasOnline, hasOffline]);
-
+ 
   /* =======================================================
      MONTH / WEEK / DAY DATA
   ======================================================= */
@@ -1598,76 +1488,10 @@ export default function DoctorAppointmentCalendarScreen() {
 
   return (
     <View style={styles.screen}>
-      {/* HEADER */}
-
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.menuButton}
-          onPress={() =>
-            setMenuOpen(true)
-          }
-          activeOpacity={0.85}
-        >
-          <Ionicons
-            name="menu-outline"
-            size={25}
-            color={GREEN}
-          />
-        </TouchableOpacity>
-
-        <View
-          style={styles.headerTextWrap}
-        >
-          <Text
-            style={
-              styles.headerEyebrow
-            }
-          >
-            DOCTOR PORTAL
-          </Text>
-
-          <Text
-            style={styles.headerTitle}
-            numberOfLines={1}
-          >
-            Appointment Calendar
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.dashboardButton}
-          onPress={() =>
-            router.replace(
-              "/doctor/dashboard" as any
-            )
-          }
-          activeOpacity={0.85}
-        >
-          <Ionicons
-            name="grid-outline"
-            size={20}
-            color={GREEN}
-          />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.doctorAvatar}
-          onPress={() =>
-            router.push(
-              "/doctor/profile" as any
-            )
-          }
-          activeOpacity={0.85}
-        >
-          <Text
-            style={
-              styles.doctorAvatarText
-            }
-          >
-            {doctorInitial}
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <DoctorHeader
+  title="Appointment Calendar"
+  onMenuPress={() => setMenuOpen(true)}
+/>
 
       {loading ? (
         <View style={styles.bodyLoader}>
@@ -2041,268 +1865,11 @@ export default function DoctorAppointmentCalendarScreen() {
         </ScrollView>
       )}
 
-      {/* ===================================================
-          DRAWER - SAME AS DASHBOARD
-      =================================================== */}
-
-      <Modal
-        visible={menuOpen}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={() =>
-          setMenuOpen(false)
-        }
-      >
-        <View style={styles.drawerRoot}>
-          <Pressable
-            style={styles.drawerBackdrop}
-            onPress={() =>
-              setMenuOpen(false)
-            }
-          />
-
-          <View style={styles.drawer}>
-            <View
-              style={
-                styles.drawerBrandWrap
-              }
-            >
-              <View
-                style={styles.drawerLogo}
-              >
-                <Ionicons
-                  name="medical"
-                  size={25}
-                  color={GOLD}
-                />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={
-                    styles.drawerBrand
-                  }
-                >
-                  NeoLife
-                </Text>
-
-                <Text
-                  style={
-                    styles.drawerPortal
-                  }
-                >
-                  Doctor Portal
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={
-                  styles.drawerClose
-                }
-                onPress={() =>
-                  setMenuOpen(false)
-                }
-              >
-                <Ionicons
-                  name="close"
-                  size={22}
-                  color={GREEN}
-                />
-              </TouchableOpacity>
-            </View>
-
-            <View
-              style={
-                styles.drawerDoctorCard
-              }
-            >
-              <View
-                style={
-                  styles.drawerDoctorAvatar
-                }
-              >
-                <Text
-                  style={
-                    styles.drawerDoctorAvatarText
-                  }
-                >
-                  {doctorInitial}
-                </Text>
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text
-                  numberOfLines={1}
-                  style={
-                    styles.drawerDoctorName
-                  }
-                >
-                  {doctorName}
-                </Text>
-
-                <Text
-                  style={
-                    styles.drawerDoctorRole
-                  }
-                >
-                  Doctor
-                </Text>
-              </View>
-            </View>
-
-            <ScrollView
-              showsVerticalScrollIndicator={
-                false
-              }
-              contentContainerStyle={{
-                paddingBottom: 20,
-              }}
-            >
-              {(
-                [
-                  "MAIN",
-                  "CLINICAL",
-                  "FINANCE",
-                ] as const
-              ).map((section) => {
-                const items =
-                  visibleMenu.filter(
-                    (item) =>
-                      item.section ===
-                      section
-                  );
-
-                if (!items.length) {
-                  return null;
-                }
-
-                return (
-                  <View
-                    key={section}
-                    style={
-                      styles.drawerSection
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.drawerSectionLabel
-                      }
-                    >
-                      {section}
-                    </Text>
-
-                    {items.map((item) => {
-                      const active =
-                        item.label ===
-                        "Appointment Calendar";
-
-                      return (
-                        <TouchableOpacity
-                          key={item.label}
-                          style={[
-                            styles.drawerItem,
-                            active &&
-                              styles.drawerItemActive,
-                          ]}
-                          activeOpacity={
-                            0.85
-                          }
-                          onPress={() => {
-                            setMenuOpen(
-                              false
-                            );
-
-                            if (
-                              active
-                            ) {
-                              return;
-                            }
-
-                            router.push(
-                              item.route as any
-                            );
-                          }}
-                        >
-                          <View
-                            style={[
-                              styles.drawerItemIcon,
-                              active &&
-                                styles.drawerItemIconActive,
-                            ]}
-                          >
-                            <Ionicons
-                              name={
-                                item.icon
-                              }
-                              size={19}
-                              color={
-                                active
-                                  ? GREEN
-                                  : GOLD
-                              }
-                            />
-                          </View>
-
-                          <Text
-                            style={[
-                              styles.drawerItemText,
-                              active &&
-                                styles.drawerItemTextActive,
-                            ]}
-                          >
-                            {item.label}
-                          </Text>
-
-                          <Ionicons
-                            name="chevron-forward"
-                            size={16}
-                            color={
-                              active
-                                ? GREEN
-                                : "#AFC0B6"
-                            }
-                          />
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                );
-              })}
-            </ScrollView>
-
-            <TouchableOpacity
-              style={styles.logoutButton}
-              onPress={() => {
-                setMenuOpen(false);
-
-                setConfirm({
-                  visible: true,
-                  action: "LOGOUT",
-                  title: "Log Out?",
-                  message:
-                    "Are you sure you want to leave the doctor portal?",
-                  itemId: "",
-                });
-              }}
-            >
-              <Ionicons
-                name="log-out-outline"
-                size={20}
-                color={WHITE}
-              />
-
-              <Text
-                style={
-                  styles.logoutButtonText
-                }
-              >
-                Logout
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <DoctorDrawer
+  visible={menuOpen}
+  onClose={() => setMenuOpen(false)}
+  activeRoute="/doctor/calendar"
+/>
 
       {/* ===================================================
           BOOKING DETAILS
@@ -3113,15 +2680,10 @@ export default function DoctorAppointmentCalendarScreen() {
               style={styles.confirmIcon}
             >
               <Ionicons
-                name={
-                  confirm.action ===
-                  "LOGOUT"
-                    ? "log-out-outline"
-                    : "checkmark-circle-outline"
-                }
-                size={31}
-                color={GREEN}
-              />
+  name="checkmark-circle-outline"
+  size={31}
+  color={GREEN}
+/>
             </View>
 
             <Text
