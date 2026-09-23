@@ -10,7 +10,7 @@ import {
   FlatList,
   Modal,
   Pressable,
-  SafeAreaView,
+  
   ScrollView,
   StyleSheet,
   Text,
@@ -22,17 +22,22 @@ import {
   isTrackReference,
   LiveKitRoom,
   registerGlobals,
-  RoomAudioRenderer,
   useLocalParticipant,
   useTracks,
   VideoTrack,
 } from "@livekit/react-native";
 import { Track } from "livekit-client";
+import { SafeAreaView } from "react-native-safe-area-context";
 
+
+import { API_BASE_URL } from "../services/api";
 registerGlobals();
 
-const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL || "http://192.168.1.4:8085/api";
+console.log("LiveKit components:", {
+  LiveKitRoom: typeof LiveKitRoom,
+  VideoTrack: typeof VideoTrack,
+  
+});
 
 const C = {
   dark: "#123C32",
@@ -102,7 +107,23 @@ type Product = {
   dosageForm?: string;
 };
 
+
 async function token() {
+  const role = String(
+    (await AsyncStorage.getItem("role")) || ""
+  )
+    .replace(/^ROLE_/i, "")
+    .trim()
+    .toUpperCase();
+
+  if (role === "DOCTOR") {
+    return (
+      (await AsyncStorage.getItem("doctorToken")) ||
+      (await AsyncStorage.getItem("token")) ||
+      ""
+    );
+  }
+
   return (
     (await AsyncStorage.getItem("token")) ||
     (await AsyncStorage.getItem("accessToken")) ||
@@ -393,19 +414,120 @@ export default function ConsultationRoomScreen() {
     [consultationId]
   );
 
-  const loadProducts = useCallback(async () => {
-    try {
-      // Same website API. It is intentionally called without Bearer auth there.
-      const response = await fetch(`${API_BASE_URL}/products/getAll`, {
-        headers: { Accept: "application/json" },
-      });
-      const text = await response.text();
-      const result = text ? JSON.parse(text) : null;
-      setProducts(arr(result).filter((p: any) => Number(p.stock || 0) > 0));
-    } catch {
-      setProducts([]);
+ const openPatientReport = useCallback(async (report: any) => {
+  try {
+    const rawUrl =
+      typeof report === "string"
+        ? report
+        : report.fileUrl ||
+          report.reportUrl ||
+          report.downloadUrl ||
+          report.url ||
+          report.filePath;
+
+    if (!rawUrl) {
+      console.log("REPORT DATA:", JSON.stringify(report));
+
+      Alert.alert(
+        "Report URL Missing",
+        "The consultation API did not provide a report URL. Check REPORT DATA in your Metro terminal."
+      );
+      return;
     }
-  }, []);
+
+    const baseUrl = API_BASE_URL.replace(/\/api\/?$/, "");
+
+    const reportUrl = /^https?:\/\//i.test(rawUrl)
+      ? rawUrl
+      : `${baseUrl}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}`;
+
+    const auth = await token();
+
+    const extension =
+      reportUrl.split("?")[0].split(".").pop()?.toLowerCase();
+
+    const fileExtension =
+      extension === "pdf" ||
+      extension === "png" ||
+      extension === "jpg" ||
+      extension === "jpeg"
+        ? extension
+        : "pdf";
+
+    const localUri =
+      `${FileSystem.cacheDirectory}NeoLife-Report-${Date.now()}.${fileExtension}`;
+
+    const result = await FileSystem.downloadAsync(
+      reportUrl,
+      localUri,
+      {
+        headers: {
+          Authorization: `Bearer ${auth}`,
+        },
+      }
+    );
+
+    if (result.status < 200 || result.status >= 300) {
+      throw new Error(`Unable to download report (${result.status}).`);
+    }
+
+    if (Platform.OS === "android") {
+      const contentUri =
+        await FileSystem.getContentUriAsync(result.uri);
+
+      await Linking.openURL(contentUri);
+    } else {
+      await Sharing.shareAsync(result.uri);
+    }
+  } catch (error: any) {
+    console.error("OPEN REPORT ERROR:", error);
+
+    Alert.alert(
+      "Unable to Open Report",
+      error?.message || "Please try again."
+    );
+  }
+}, []);
+
+const loadProducts = useCallback(async () => {
+  try {
+    const result = await api("/products/getAll");
+
+    console.log("PRODUCT RESPONSE:", JSON.stringify(result));
+
+    const data = result?.data ?? result;
+
+    const list: Product[] =
+      Array.isArray(data)
+        ? data
+        : Array.isArray(data?.content)
+          ? data.content
+          : Array.isArray(data?.products)
+            ? data.products
+            : Array.isArray(data?.items)
+              ? data.items
+              : [];
+
+    console.log("TOTAL MEDICINES:", list.length);
+
+    setProducts(list);
+
+    if (list.length === 0) {
+      Alert.alert(
+        "No Medicines Found",
+        "The product API returned no medicines. Check the Metro terminal for PRODUCT RESPONSE."
+      );
+    }
+  } catch (error: any) {
+    console.error("MEDICINE API ERROR:", error);
+    setProducts([]);
+
+    Alert.alert(
+      "Unable to Load Medicines",
+      error?.message || "Please try again."
+    );
+  }
+}, []);
 
   const start = useCallback(async () => {
     if (!consultationId) {
@@ -636,31 +758,84 @@ export default function ConsultationRoomScreen() {
     [medicines, prescription, fetchPrescription]
   );
 
-  const downloadPrescription = useCallback(async () => {
-    if (!prescription?.id) return;
-    try {
-      const auth = await token();
-      const fileUri = `${FileSystem.documentDirectory}NeoLife-Prescription-${prescription.id}.pdf`;
-      const result = await FileSystem.downloadAsync(
-        `${API_BASE_URL}/prescriptions/${prescription.id}/download`,
-        fileUri,
-        { headers: { Authorization: `Bearer ${auth}`, Accept: "application/pdf" } }
+  
+const downloadPrescription = useCallback(async () => { 
+  if (!prescription?.id) {
+    Alert.alert("Unavailable", "Prescription is not available.");
+    return;
+  }
+
+  try {
+    const auth = await token();
+
+    const fileName =
+      `NeoLife-Prescription-${prescription.id}.pdf`;
+
+    const temporaryUri =
+      `${FileSystem.cacheDirectory}${fileName}`;
+
+    const result = await FileSystem.downloadAsync(
+      `${API_BASE_URL}/prescriptions/${prescription.id}/download`,
+      temporaryUri,
+      {
+        headers: {
+          Authorization: `Bearer ${auth}`,
+          Accept: "application/pdf",
+        },
+      }
+    );
+
+    if (result.status < 200 || result.status >= 300) {
+      throw new Error(
+        `Download failed (${result.status}).`
       );
-      if (result.status < 200 || result.status >= 300) {
-        throw new Error(`Download failed (${result.status}).`);
-      }
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(result.uri, {
-          mimeType: "application/pdf",
-          dialogTitle: "NeoLife Prescription",
-        });
-      } else {
-        Alert.alert("Downloaded", result.uri);
-      }
-    } catch (e: any) {
-      Alert.alert("Download failed", e?.message || "Unable to download prescription.");
     }
-  }, [prescription]);
+
+    const permissions =
+      await FileSystem.StorageAccessFramework
+        .requestDirectoryPermissionsAsync();
+
+    if (!permissions.granted) {
+      Alert.alert(
+        "Download Cancelled",
+        "Please select a folder to save the prescription."
+      );
+      return;
+    }
+
+    const destination =
+      await FileSystem.StorageAccessFramework
+        .createFileAsync(
+          permissions.directoryUri,
+          fileName,
+          "application/pdf"
+        );
+
+    const pdfBase64 =
+      await FileSystem.readAsStringAsync(result.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+    await FileSystem.writeAsStringAsync(
+      destination,
+      pdfBase64,
+      {
+        encoding: FileSystem.EncodingType.Base64,
+      }
+    );
+
+    Alert.alert(
+      "Download Complete",
+      "Your prescription PDF has been saved successfully."
+    );
+  } catch (error: any) {
+    Alert.alert(
+      "Download Failed",
+      error?.message ||
+        "Unable to save your prescription."
+    );
+  }
+}, [prescription]);
 
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -758,7 +933,7 @@ export default function ConsultationRoomScreen() {
         options={{ adaptiveStream: true, dynacast: true }}
         onDisconnected={leave}
       >
-        <RoomAudioRenderer />
+        
         <ScrollView contentContainerStyle={s.content}>
           <MeetingStage role={role} onLeave={leave} onEnd={endConsultation} />
 
@@ -817,7 +992,14 @@ export default function ConsultationRoomScreen() {
                 {prescription?.status !== "FINALIZED" && (
                   <>
                     <View style={s.rowButtons}>
-                      <Pressable style={s.secondary} onPress={() => setShowMedicines(true)}>
+                      <Pressable
+  style={s.secondary}
+  onPress={() => {
+    setSearch("");
+    setShowMedicines(true);
+    loadProducts();
+  }}
+>
                         <Ionicons name="search" size={17} color={C.dark} />
                         <Text style={s.secondaryText}>Find Medicine</Text>
                       </Pressable>
@@ -878,29 +1060,51 @@ export default function ConsultationRoomScreen() {
           </View>
 
           {role === "DOCTOR" && (
-            <View style={s.card}>
-              <Text style={s.cardTitle}>Patient Reports</Text>
-              {reports.length ? (
-                reports.map((r: any, i) => (
-                  <View key={r.id || i} style={s.reportRow}>
-                    <Ionicons name="document-text" size={22} color={C.dark} />
-                    <Text style={s.reportName}>
-                      {r.fileName || r.name || `Report ${i + 1}`}
-                    </Text>
-                  </View>
-                ))
-              ) : (
-                <Text style={s.empty}>No uploaded reports available.</Text>
-              )}
-            </View>
-          )}
+  <View style={s.card}>
+    <Text style={s.cardTitle}>Patient Reports</Text>
+
+    {reports.length ? (
+      reports.map((r: any, i) => (
+        <Pressable
+          key={r.id || i}
+          style={s.reportRow}
+          onPress={() => openPatientReport(r)}
+        >
+          <Ionicons
+            name="document-text"
+            size={22}
+            color={C.dark}
+          />
+
+          <Text style={s.reportName}>
+            {r.fileName ||
+              r.name ||
+              `Report ${i + 1}`}
+          </Text>
+
+          <Ionicons
+            name="eye-outline"
+            size={22}
+            color={C.green}
+          />
+        </Pressable>
+      ))
+    ) : (
+      <Text style={s.empty}>
+        No uploaded reports available.
+      </Text>
+    )}
+  </View>
+)}
         </ScrollView>
       </LiveKitRoom>
 
       <Modal visible={showMedicines} animationType="slide" onRequestClose={() => setShowMedicines(false)}>
         <SafeAreaView style={s.modalRoot}>
           <View style={s.modalHeader}>
-            <Text style={s.cardTitle}>Select Medicine</Text>
+            <Text style={{ color: C.muted, marginTop: 4 }}>
+  {products.length} medicines available
+</Text>
             <Pressable onPress={() => setShowMedicines(false)}>
               <Ionicons name="close" size={28} color={C.dark} />
             </Pressable>

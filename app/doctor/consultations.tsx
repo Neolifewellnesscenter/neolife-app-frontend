@@ -21,6 +21,7 @@ import DoctorDrawer from "../../components/DoctorDrawer";
 import DoctorHeader from "../../components/DoctorHeader";
 import { API_BASE_URL } from "../../services/api";
 
+
 const GREEN = "#0B3D2E";
 const GREEN2 = "#14533D";
 const MINT = "#EAF5EF";
@@ -42,8 +43,6 @@ const INFO_LIGHT = "#EDF6FB";
 const PURPLE = "#76548F";
 const PURPLE_LIGHT = "#F5EFFB";
 
-const CONSULTATION_ROOM_URL =
-  "https://neolifeayush.com/doctor/consultation-room";
 
 const PAID_STATUSES = [
   "SUCCESS",
@@ -194,6 +193,37 @@ function localDateKey(date = new Date()) {
 function isPaid(value: any) {
   return PAID_STATUSES.includes(
     String(value || "").trim().toUpperCase()
+  );
+}
+function canRejoinConsultation(
+  item: Consultation,
+  meeting?: Meeting | null
+) {
+  if (
+    !item.id ||
+    item.status !== "IN_PROGRESS" ||
+    !item.date ||
+    !item.endTime
+  ) {
+    return false;
+  }
+
+  if (
+    !meeting ||
+    ["ENDED", "EXPIRED", "CANCELLED"].includes(
+      String(meeting.status || "").toUpperCase()
+    )
+  ) {
+    return false;
+  }
+
+  const endTime = new Date(
+    `${item.date}T${apiTime(item.endTime)}`
+  );
+
+  return (
+    !Number.isNaN(endTime.getTime()) &&
+    Date.now() < endTime.getTime()
   );
 }
 
@@ -1799,17 +1829,16 @@ export default function DoctorConsultationsScreen() {
             }
           );
 
-          await Linking.openURL(
-            `${CONSULTATION_ROOM_URL}?consultationId=${encodeURIComponent(
-              String(
-                item.id
-              )
-            )}`
-          );
+          setDetailsOpen(false);
 
-          setDetailsOpen(
-            false
-          );
+router.push({
+  pathname: "/consultation-room" as any,
+  params: {
+    consultationId: String(item.id),
+  },
+});
+
+        
         } catch (error: any) {
           notify(
             "error",
@@ -1830,6 +1859,29 @@ export default function DoctorConsultationsScreen() {
         selectedMeeting,
       ]
     );
+
+      const rejoinConsultation = useCallback(
+    (item: Consultation) => {
+      if (!canRejoinConsultation(item, selectedMeeting)) {
+        notify(
+          "error",
+          "Cannot Rejoin",
+          "The consultation has ended, the room is unavailable, or the scheduled end time has passed."
+        );
+        return;
+      }
+
+      setDetailsOpen(false);
+
+      router.push({
+        pathname: "/consultation-room" as any,
+        params: {
+          consultationId: String(item.id),
+        },
+      });
+    },
+    [notify, selectedMeeting]
+  );
 
   const completeConsultation =
     useCallback(
@@ -2858,6 +2910,11 @@ export default function DoctorConsultationsScreen() {
               });
             }
           }}
+          onRejoin={() => {
+  if (selected) {
+    rejoinConsultation(selected);
+  }
+}}
           onComplete={() => {
             if (
               selected
@@ -3514,6 +3571,7 @@ function DetailsModal({
   onReschedule,
   onCreateRoom,
   onStart,
+  onRejoin,
   onComplete,
   onPrescriptionPad,
   onViewPrescription,
@@ -3530,6 +3588,7 @@ function DetailsModal({
   onReschedule: () => void;
   onCreateRoom: () => void;
   onStart: () => void;
+  onRejoin: () => void;
   onComplete: () => void;
   onPrescriptionPad: () => void;
   onViewPrescription: () => void;
@@ -3928,8 +3987,18 @@ function DetailsModal({
                 />
               ) : null}
 
+              {canRejoinConsultation(item, meeting) ? (
+  <Action
+    icon="videocam-outline"
+    text="Rejoin Consultation"
+    bg={SUCCESS_LIGHT}
+    color={SUCCESS}
+    onPress={onRejoin}
+  />
+) : null}
+
               {!closed &&
-              item.status !==
+               item.status !==  
                 "IN_PROGRESS" ? (
                 <Action
                   icon="calendar-outline"
