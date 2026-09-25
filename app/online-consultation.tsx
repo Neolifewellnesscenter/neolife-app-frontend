@@ -364,17 +364,22 @@ export default function OnlineConsultationScreen() {
   }
 
   function nextFromDoctor() {
-    if (!selectedDoctor) {
-      showNotice(
-        "info",
-        "Select a Doctor",
-        "Please choose the doctor you want to consult online."
-      );
-      return;
-    }
-
-    setStep(2);
+  if (!selectedDoctor) {
+    showNotice(
+      "info",
+      "Select a Doctor",
+      "Please choose the doctor you want to consult online."
+    );
+    return;
   }
+
+  setStep(2);
+
+  // Automatically load today's ONLINE consultation slots.
+  if (!preferredDate) {
+    loadAvailableSlots(getLocalDateString(0));
+  }
+}
 
   function handleDateSelected(
   event: any,
@@ -1182,7 +1187,7 @@ export default function OnlineConsultationScreen() {
 
                 {selectedDoctor && (
                   <View style={styles.selectedDoctorCard}>
-                    <DoctorImage doctor={selectedDoctor} />
+                    <DoctorImage doctor={selectedDoctor} small />
 
                     <View style={{ flex: 1 }}>
                       <Text style={styles.selectedEyebrow}>SELECTED DOCTOR</Text>
@@ -1197,169 +1202,204 @@ export default function OnlineConsultationScreen() {
                     </View>
 
                     <Ionicons
-                      name="videocam"
-                      size={21}
+                      name="checkmark-circle"
+                      size={20}
                       color={SUCCESS}
                     />
                   </View>
                 )}
 
-                <Text style={styles.fieldLabel}>
-  CONSULTATION DATE
-</Text>
+             
 
-<TouchableOpacity
-  style={styles.datePickerButton}
-  activeOpacity={0.85}
-  onPress={() => setShowDatePicker(true)}
->
-  <View style={styles.dateIconBox}>
+
+<Text style={styles.fieldLabel}>CHOOSE DATE</Text>
+
+<View style={styles.quickDateRow}>
+  {[
+    {
+      label: "Today",
+      date: getLocalDateString(0),
+      icon: "today-outline" as const,
+    },
+    {
+      label: "Tomorrow",
+      date: getLocalDateString(1),
+      icon: "arrow-forward-outline" as const,
+    },
+  ].map((item) => {
+    const active = preferredDate === item.date;
+
+    return (
+      <TouchableOpacity
+        key={item.label}
+        activeOpacity={0.85}
+        style={[
+          styles.quickDateCard,
+          active && styles.quickDateCardActive,
+        ]}
+        onPress={() => loadAvailableSlots(item.date)}
+      >
+        {active && (
+          <View style={styles.quickSelectedBadge}>
+            <Ionicons name="checkmark" size={10} color={GREEN} />
+          </View>
+        )}
+
+        <View
+          style={[
+            styles.quickDateIcon,
+            active && styles.quickDateIconActive,
+          ]}
+        >
+          <Ionicons
+            name={item.icon}
+            size={18}
+            color={active ? WHITE : GREEN}
+          />
+        </View>
+
+        <Text style={[styles.quickDateTitle, active && styles.quickDateTitleActive]}>
+          {item.label}
+        </Text>
+
+        <Text style={[styles.quickDateValue, active && styles.quickDateValueActive]}>
+          {formatQuickDate(item.date)}
+        </Text>
+      </TouchableOpacity>
+    );
+  })}
+
+  <TouchableOpacity
+    activeOpacity={0.85}
+    style={[
+      styles.quickDateCard,
+      !!preferredDate &&
+        preferredDate !== getLocalDateString(0) &&
+        preferredDate !== getLocalDateString(1) &&
+        styles.quickDateCardActive,
+    ]}
+    onPress={() => setShowDatePicker(true)}
+  >
+    <View style={styles.quickDateIcon}>
+      <Ionicons
+        name="calendar-outline"
+        size={20}
+        color={GREEN}
+      />
+    </View>
+
+    <Text style={styles.quickDateTitle}>Calendar</Text>
+    <Text style={styles.quickDateValue}>Other date</Text>
+  </TouchableOpacity>
+</View>
+
+<View style={styles.selectedDateBar}>
+  <View style={styles.selectedDateIcon}>
     <Ionicons
-      name="calendar-outline"
-      size={20}
-      color={GOLD_DARK}
+      name="calendar-clear-outline"
+      size={18}
+      color={GREEN}
     />
   </View>
 
   <View style={{ flex: 1 }}>
-    <Text style={styles.dateSmallLabel}>
-      PREFERRED DATE
+    <Text style={styles.selectedDateLabel}>
+      SELECTED DATE
     </Text>
 
-    <Text
-      style={[
-        styles.dateValue,
-        !preferredDate &&
-          styles.datePlaceholder,
-      ]}
-    >
+    <Text style={styles.selectedDateValue}>
       {preferredDate
-        ? formatDate(preferredDate)
-        : "Tap to choose a date"}
+        ? formatDateWithDay(preferredDate)
+        : "Selecting today..."}
     </Text>
   </View>
 
-  <Ionicons
-    name="chevron-down"
-    size={18}
-    color={GREEN}
-  />
-</TouchableOpacity>
-
-{preferredDate ? (
-  <View style={styles.selectedDateInfo}>
-    <Ionicons
-      name="checkmark-circle"
-      size={16}
-      color={SUCCESS}
-    />
-
-    <Text style={styles.selectedDateText}>
-      {formatDate(preferredDate)} selected
-    </Text>
-  </View>
-) : (
-  <Text style={styles.dateHelpText}>
-    Choose today or any future date
-  </Text>
-)}
+  <TouchableOpacity
+    style={styles.calendarEditButton}
+    onPress={() => setShowDatePicker(true)}
+  >
+    <Ionicons name="create-outline" size={16} color={GREEN} />
+  </TouchableOpacity>
+</View>
 
 {showDatePicker && (
   <DateTimePicker
     value={
       preferredDate
-        ? new Date(
-            `${preferredDate}T12:00:00`
-          )
+        ? new Date(`${preferredDate}T12:00:00`)
         : new Date()
     }
     mode="date"
-    display={
-      Platform.OS === "android"
-        ? "calendar"
-        : "spinner"
-    }
+    display={Platform.OS === "android" ? "calendar" : "spinner"}
     minimumDate={new Date()}
     onChange={handleDateSelected}
   />
 )}
 
-                <View style={styles.slotHeader}>
-                  <Text style={styles.fieldLabel}>AVAILABLE TIME SLOTS</Text>
+<View style={styles.slotHeader}>
+  <Text style={styles.fieldLabel}>AVAILABLE TIMES</Text>
 
-                  {slots.length > 0 && (
-                    <Text style={styles.slotCount}>
-                      {slots.filter(slotIsAvailable).length} available
-                    </Text>
-                  )}
-                </View>
+  {!!preferredDate && !slotLoading && (
+    <Text style={styles.slotCount}>
+      {slots.filter(slotIsAvailable).length} available
+    </Text>
+  )}
+</View>
 
-                <View style={styles.slotGrid}>
-                  {slotLoading ? (
-                    <LoadingBox text="Checking online slots..." compact />
-                  ) : !preferredDate ? (
-                    <EmptyInline
-                      icon="calendar-outline"
-                      text="Enter a consultation date to view available slots."
-                    />
-                  ) : !slots.length ? (
-                    <EmptyInline
-                      icon="time-outline"
-                      text="No online consultation slots are available for this date."
-                    />
-                  ) : (
-                    slots.map((slot, index) => {
-                      const available = slotIsAvailable(slot);
-                      const selected =
-                        normalizeApiTime(selectedSlot?.startTime || "") ===
-                        normalizeApiTime(slot.startTime || "");
+{slotLoading ? (
+  <LoadingBox text="Checking online slots..." compact />
+) : !preferredDate ? (
+  <EmptyInline
+    icon="calendar-outline"
+    text="Today's available times will appear here."
+  />
+) : !slots.some(slotIsAvailable) ? (
+  <EmptyInline
+    icon="time-outline"
+    text="No online consultation slots are available for this date. Try another date."
+  />
+) : (
+  <View style={styles.slotGrid}>
+    {slots.filter(slotIsAvailable).map((slot, index) => {
+      const selected =
+        normalizeApiTime(selectedSlot?.startTime || "") ===
+        normalizeApiTime(slot.startTime || "");
 
-                      return (
-                        <TouchableOpacity
-                          key={String(slot.id || `${slot.startTime}-${index}`)}
-                          disabled={!available}
-                          style={[
-                            styles.slotButton,
-                            selected && styles.slotSelected,
-                            !available && styles.slotDisabled,
-                          ]}
-                          onPress={() => setSelectedSlot(slot)}
-                        >
-                          <Ionicons
-                            name="videocam-outline"
-                            size={14}
-                            color={
-                              selected
-                                ? WHITE
-                                : available
-                                ? GREEN
-                                : "#A1AAA4"
-                            }
-                          />
+      return (
+        <TouchableOpacity
+          key={String(slot.id || `${slot.startTime}-${index}`)}
+          activeOpacity={0.85}
+          style={[
+            styles.slotButton,
+            selected && styles.slotSelected,
+          ]}
+          onPress={() => setSelectedSlot(slot)}
+        >
+          <Text
+            style={[
+              styles.slotText,
+              selected && styles.slotTextSelected,
+            ]}
+          >
+            {formatTime(slot.startTime)}
+          </Text>
 
-                          <Text
-                            style={[
-                              styles.slotText,
-                              selected && styles.slotTextSelected,
-                              !available && styles.slotTextDisabled,
-                            ]}
-                          >
-                            {formatTime(slot.startTime)}
-                            {slot.endTime
-                              ? `\n${formatTime(slot.endTime)}`
-                              : ""}
-                          </Text>
-
-                          {!available && (
-                            <Text style={styles.unavailableText}>
-                              Unavailable
-                            </Text>
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })
-                  )}
-                </View>
+          {!!slot.endTime && (
+            <Text
+              style={[
+                styles.slotEndText,
+                selected && styles.slotEndTextSelected,
+              ]}
+            >
+              to {formatTime(slot.endTime)}
+            </Text>
+          )}
+        </TouchableOpacity>
+      );
+    })}
+  </View>
+)}
+                
 
                 <NavigationButtons
                   backText="Previous"
@@ -1970,14 +2010,14 @@ function DoctorCard({
   );
 }
 
-function DoctorImage({ doctor }: { doctor: Doctor }) {
+function DoctorImage({ doctor, small = false }: { doctor: Doctor; small?: boolean }) {
   const uri = getDoctorImageUrl(doctor);
 
   if (!uri) {
     return (
       <Image
         source={require("../assets/images/main_logo.jpeg")}
-        style={styles.doctorImage}
+        style={[styles.doctorImage, small && styles.doctorImageMini]}
       />
     );
   }
@@ -1985,7 +2025,7 @@ function DoctorImage({ doctor }: { doctor: Doctor }) {
   return (
     <Image
       source={{ uri }}
-      style={styles.doctorImage}
+      style={[styles.doctorImage, small && styles.doctorImageMini]}
       defaultSource={require("../assets/images/main_logo.jpeg")}
     />
   );
@@ -2296,6 +2336,39 @@ function startOfToday() {
   ).getTime();
 }
 
+function getLocalDateString(offsetDays = 0) {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + offsetDays);
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function formatQuickDate(value: string) {
+  const date = new Date(`${value}T12:00:00`);
+
+  return date.toLocaleDateString("en-IN", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+  });
+}
+
+function formatDateWithDay(value: string) {
+  const date = new Date(`${value}T12:00:00`);
+
+  return date.toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 function guessMimeType(name: string) {
   const lower = name.toLowerCase();
 
@@ -2316,6 +2389,74 @@ function formatFileSize(size?: number | null) {
 }
 
 const styles = StyleSheet.create({
+  doctorImageMini: { width: 55, height: 55, borderRadius: 13 },
+
+  quickDateValueActive: {
+    color: GREEN_2,
+  },
+
+  quickDateTitleActive: {
+    color: GREEN,
+  },
+
+  slotEndTextSelected: {
+    color: "#D5E5DB",
+  },
+
+  slotEndText: {
+    marginTop: 2,
+    fontFamily: "DMSans_400Regular",
+    color: MUTED,
+    fontSize: 7,
+  },
+
+  slotTextSelected: {
+    color: WHITE,
+  },
+
+  slotText: {
+    fontFamily: "DMSans_700Bold",
+    color: GREEN,
+    fontSize: 10,
+  },
+
+  slotSelected: {
+    backgroundColor: GREEN,
+    borderColor: GREEN,
+  },
+
+  slotButton: {
+    width: "31%",
+    minHeight: 57,
+    paddingHorizontal: 7,
+    paddingVertical: 9,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: CREAM,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+
+  slotGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 9,
+  },
+
+  slotCount: {
+    fontFamily: "DMSans_500Medium",
+    color: SUCCESS,
+    fontSize: 8,
+  },
+
+  slotHeader: {
+    marginTop: 19,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
   loader: {
     flex: 1,
     alignItems: "center",
@@ -2635,40 +2776,34 @@ const styles = StyleSheet.create({
   },
 
   selectedDoctorCard: {
-    marginBottom: 17,
-    padding: 12,
-    borderRadius: 18,
+    marginBottom: 16,
+    padding: 10,
+    borderRadius: 16,
     flexDirection: "row",
     alignItems: "center",
-    gap: 11,
+    gap: 10,
     backgroundColor: MINT,
   },
   selectedEyebrow: {
     fontFamily: "DMSans_700Bold",
     color: GOLD_DARK,
-    fontSize: 6,
-    letterSpacing: 0.8,
+    fontSize: 7,
+    letterSpacing: 0.7,
   },
   selectedName: {
-    marginTop: 3,
-    fontFamily: "PlayfairDisplay_700Bold",
-    color: GREEN,
-    fontSize: 16,
-  },
-  selectedSpec: {
     marginTop: 2,
-    fontFamily: "DMSans_400Regular",
-    color: MUTED,
-    fontSize: 7,
-  },
-
-  fieldLabel: {
-    marginTop: 14,
-    marginBottom: 7,
     fontFamily: "DMSans_700Bold",
     color: GREEN,
-    fontSize: 7,
-    letterSpacing: 1,
+    fontSize: 11,
+  },
+  selectedSpec: { marginTop: 2, fontFamily: "DMSans_400Regular", color: MUTED, fontSize: 8 },
+
+  fieldLabel: {
+    marginBottom: 7,
+    fontFamily: "DMSans_700Bold",
+    color: "#6E7A73",
+    fontSize: 8,
+    letterSpacing: 0.75,
   },
   inputWrap: {
     minHeight: 52,
@@ -2758,60 +2893,117 @@ dateHelpText: {
   fontSize: 7,
 },
 
-  slotHeader: {
-    marginTop: 5,
+  quickDateRow: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-  },
-  slotCount: {
-    marginBottom: 7,
-    fontFamily: "DMSans_700Bold",
-    color: SUCCESS,
-    fontSize: 7,
-  },
-  slotGrid: {
-    minHeight: 110,
-    padding: 10,
-    borderRadius: 17,
-    flexDirection: "row",
-    flexWrap: "wrap",
     gap: 8,
-    backgroundColor: "#F8F9F6",
   },
-  slotButton: {
-    width: "31%",
-    minHeight: 62,
-    padding: 7,
-    borderRadius: 13,
+
+  quickDateCard: {
+    flex: 1,
+    minHeight: 104,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: WHITE,
+    position: "relative",
+    backgroundColor: CREAM,
     borderWidth: 1,
-    borderColor: "#D9E3DC",
+    borderColor: BORDER,
   },
-  slotSelected: {
-    backgroundColor: GREEN,
+
+  quickDateCardActive: {
+    backgroundColor: MINT,
     borderColor: GREEN,
   },
-  slotDisabled: {
-    backgroundColor: "#ECEFED",
-    borderColor: "#DEE3E0",
+
+  quickSelectedBadge: {
+    position: "absolute",
+    top: 7,
+    right: 7,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: GOLD,
   },
-  slotText: {
+
+  quickDateIcon: {
+    width: 34,
+    height: 34,
+    marginBottom: 7,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: MINT,
+  },
+
+  quickDateIconActive: {
+    backgroundColor: GREEN,
+  },
+
+  quickDateTitle: {
+    fontFamily: "DMSans_700Bold",
+    color: GREEN,
+    fontSize: 9,
+    textAlign: "center",
+  },
+
+  quickDateValue: {
+    marginTop: 3,
+    fontFamily: "DMSans_400Regular",
+    color: MUTED,
+    fontSize: 7,
+    textAlign: "center",
+  },
+
+  selectedDateBar: {
+    marginTop: 11,
+    minHeight: 61,
+    paddingHorizontal: 11,
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: WHITE,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+
+  selectedDateIcon: {
+    width: 38,
+    height: 38,
+    marginRight: 10,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: MINT,
+  },
+
+  selectedDateLabel: {
+    fontFamily: "DMSans_700Bold",
+    color: GOLD_DARK,
+    fontSize: 7,
+    letterSpacing: 0.7,
+  },
+
+  selectedDateValue: {
     marginTop: 3,
     fontFamily: "DMSans_700Bold",
     color: GREEN,
-    fontSize: 7,
-    textAlign: "center",
-    lineHeight: 10,
+    fontSize: 10,
   },
-  slotTextSelected: {
-    color: WHITE,
+
+  calendarEditButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: MINT,
   },
-  slotTextDisabled: {
-    color: "#9AA29D",
-  },
+
+  
   unavailableText: {
     marginTop: 2,
     fontFamily: "DMSans_700Bold",

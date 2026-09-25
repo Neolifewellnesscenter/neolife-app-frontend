@@ -60,6 +60,12 @@ const contactItems = [
     action: MAP_LINK,
   },
   {
+  icon: "location-outline",
+  title: "Second Branch",
+  value: "1st Floor, Vinyas Cloth Store, Bramhavara, Varambally, Chanthar, Udupi.",
+  action: "https://maps.google.com/maps?q=13.4373756%2C74.7454709&z=17&hl=en",
+},
+  {
     icon: "call-outline",
     title: "Phone",
     value: PHONE_DISPLAY,
@@ -375,6 +381,45 @@ export default function ContactScreen() {
           </TouchableOpacity>
         </Animated.View>
 
+{/* SECOND BRANCH MAP CARD */}
+<TouchableOpacity
+  activeOpacity={0.9}
+  onPress={() =>
+    openURL("https://maps.google.com/maps?q=13.4373756%2C74.7454709&z=17&hl=en")
+  }
+  style={styles.mapCard}
+>
+  <ImageBackground
+    source={require("../assets/images/neolife2.png")}
+    style={styles.mapImage}
+    imageStyle={styles.mapImageStyle}
+  >
+    <View style={styles.mapShade} />
+
+    <View style={styles.mapPin}>
+      <Ionicons name="location" size={24} color={WHITE} />
+    </View>
+
+    <Text style={styles.mapTitle}>
+      NeoLife Wellness Center - Bramhavara Branch
+    </Text>
+
+    <Text style={styles.mapAddress}>
+       1st Floor, Vinyas Cloth Store, Bramhavara, Varambally, Chanthar, Udupi.
+    </Text>
+
+    <View style={styles.mapButton}>
+      <Ionicons
+        name="navigate-outline"
+        size={17}
+        color={GREEN}
+      />
+      <Text style={styles.mapButtonText}>
+        Open Google Maps
+      </Text>
+    </View>
+  </ImageBackground>
+</TouchableOpacity>
         {/* FOOTER */}
         <View style={styles.footer}>
           <Image

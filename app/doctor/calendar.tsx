@@ -278,7 +278,7 @@ export default function DoctorAppointmentCalendarScreen() {
       }
     }
 
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
       await clearDoctorSession();
 
       showNotice(
@@ -297,6 +297,13 @@ export default function DoctorAppointmentCalendarScreen() {
           "Doctor session expired."
       );
     }
+    if (response.status === 403) {
+  throw new Error(
+    `Access denied (403): ${endpoint}. ${
+      result?.message || "Check doctor permissions."
+    }`
+  );
+}
 
     if (!response.ok || result?.success === false) {
       throw new Error(
@@ -651,13 +658,15 @@ export default function DoctorAppointmentCalendarScreen() {
   item.requestedDate
 ),
 
+
 time: normalizeAppointmentTime(
-  item.consultationTime ||
-  item.startTime ||
-  item.appointmentTime ||
-  item.requestedTime ||
+  item.startTime ??
+  item.consultationTime ??
+  item.appointmentTime ??
+  item.requestedTime ??
   item.time
 ),
+
       endTime: normalizeAppointmentTime(
         item.endTime
       ),
@@ -696,131 +705,81 @@ time: normalizeAppointmentTime(
      LOAD CALENDAR DATA
   ======================================================= */
 
-  async function loadAppointments() {
-    const results =
-      await Promise.allSettled([
-        doctorApiRequest(
-          "/appointments/doctor/my-appointments"
-        ),
-        doctorApiRequest(
-          "/consultations/my-consultations"
-        ),
-        doctorApiRequest(
-          "/consultations/doctor/requests"
-        ),
-      ]);
+async function loadAppointments() {
+  const results = await Promise.allSettled([
+    doctorApiRequest("/appointments/doctor/my-appointments"),
+    doctorApiRequest("/consultations/doctor/my-consultations"),
+  ]);
 
-    const errors: string[] = [];
+  const apiNames = [
+    "Doctor appointments",
+    "Doctor online consultations",
+  ];
 
-    let offlineAppointments: any[] = [];
-    let upcomingConsultations: any[] = [];
-    let pendingConsultations: any[] = [];
+  const errors: string[] = [];
 
-    if (results[0].status === "fulfilled") {
-      offlineAppointments =
-        extractAppointmentArray(
-          results[0].value
-        );
-    } else {
-      errors.push(
-        results[0].reason?.message ||
-          "Offline appointments could not be loaded."
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      const message =
+        result.reason?.message || "Unknown error";
+
+      console.warn(
+        `[CALENDAR API WARNING] ${apiNames[index]}:`,
+        message
       );
+
+      errors.push(`${apiNames[index]}: ${message}`);
     }
+  });
 
-    if (results[1].status === "fulfilled") {
-      upcomingConsultations =
-        extractConsultationArray(
-          results[1].value
-        );
-    } else {
-      errors.push(
-        results[1].reason?.message ||
-          "Online consultations could not be loaded."
-      );
-    }
+  const offlineAppointments =
+    results[0].status === "fulfilled"
+      ? extractAppointmentArray(results[0].value)
+      : [];
 
-    if (results[2].status === "fulfilled") {
-      pendingConsultations =
-        extractConsultationArray(
-          results[2].value
-        );
-    } else {
-      errors.push(
-        results[2].reason?.message ||
-          "Pending online requests could not be loaded."
-      );
-    }
+  const onlineConsultations =
+    results[1].status === "fulfilled"
+      ? extractConsultationArray(results[1].value)
+      : [];
 
-    const normalizedAppointments =
-      offlineAppointments
-        .map(normalizeAppointment)
-        .filter(
-          (item) =>
-            item.id &&
-            item.date &&
-            item.time
-        );
+  const normalizedAppointments = offlineAppointments
+    .map(normalizeAppointment)
+    .filter(
+      (item) => item.id && item.date && item.time
+    );
 
-    const consultationMap = new Map<
-      string,
-      CalendarItem
-    >();
+  const normalizedConsultations = onlineConsultations
+    .map(normalizeConsultation)
+    .filter(
+      (item) => item.id && item.date && item.time
+    );
 
-    [
-      ...pendingConsultations,
-      ...upcomingConsultations,
-    ].forEach((item) => {
-      const normalized =
-        normalizeConsultation(item);
+  const combined = [
+    ...normalizedAppointments,
+    ...normalizedConsultations,
+  ].sort(
+    (first, second) =>
+      new Date(
+        `${first.date}T${first.time}:00`
+      ).getTime() -
+      new Date(
+        `${second.date}T${second.time}:00`
+      ).getTime()
+  );
 
-      if (
-        normalized.id &&
-        normalized.date &&
-        normalized.time
-      ) {
-        consultationMap.set(
-          normalized.id,
-          normalized
-        );
-      }
-    });
+  setAppointments(combined);
 
-    const combined = [
-      ...normalizedAppointments,
-      ...Array.from(
-        consultationMap.values()
-      ),
-    ].sort((first, second) => {
-      return (
-        new Date(
-          `${first.date}T${first.time}:00`
-        ).getTime() -
-        new Date(
-          `${second.date}T${second.time}:00`
-        ).getTime()
-      );
-    });
-
-    setAppointments(combined);
-
-    if (errors.length && combined.length) {
-      showNotice(
-        "warning",
-        "Some Records Could Not Load",
-        "Some calendar records could not be loaded."
-      );
-    } else if (
-      errors.length &&
-      !combined.length
-    ) {
-      showNotice(
-        "error",
-        "Calendar Could Not Load",
-        errors.join(" ")
-      );
-    }
+  if (errors.length > 0) {
+    showNotice(
+      combined.length ? "warning" : "error",
+      combined.length
+        ? "Some Records Could Not Load"
+        : "Calendar Could Not Load",
+      errors.join("\n\n")
+    );
   }
+}
+
 
   async function refreshPage(
     initial = false

@@ -8,9 +8,10 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Linking,
   Modal,
+  Platform,
   Pressable,
-  
   ScrollView,
   StyleSheet,
   Text,
@@ -471,14 +472,13 @@ export default function ConsultationRoomScreen() {
       throw new Error(`Unable to download report (${result.status}).`);
     }
 
-    if (Platform.OS === "android") {
-      const contentUri =
-        await FileSystem.getContentUriAsync(result.uri);
-
-      await Linking.openURL(contentUri);
-    } else {
-      await Sharing.shareAsync(result.uri);
-    }
+   router.push({
+  pathname: "/report-viewer",
+  params: {
+    uri: result.uri,
+    type: fileExtension,
+  },
+});
   } catch (error: any) {
     console.error("OPEN REPORT ERROR:", error);
 

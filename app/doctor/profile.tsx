@@ -1691,15 +1691,6 @@ export default function DoctorProfileScreen() {
                 }
               />
 
-              <ReadOnlyField
-                icon="finger-print-outline"
-                label="Doctor ID"
-                value={
-                  profile.id != null
-                    ? String(profile.id)
-                    : "Assigned after profile completion"
-                }
-              />
 
               {/* PROFESSIONAL */}
 

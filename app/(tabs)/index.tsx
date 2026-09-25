@@ -836,7 +836,7 @@ export default function HomeScreen() {
 
         <View style={styles.contactCard}>
           <Text style={styles.contactKicker}>
-            VISIT NEOLIFE
+            MAIN BRANCH
           </Text>
 
           <Text style={styles.contactTitle}>
@@ -886,6 +886,56 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
         </View>
+        
+{/* SECOND CLINIC */}
+
+<View style={styles.contactCard}>
+  <Text style={styles.contactKicker}>
+    OUR ANOTHER BRANCH
+  </Text>
+
+  <Text style={styles.contactTitle}>
+   NeoLife Wellness Center - Bramhavara
+  </Text>
+
+  <Text style={styles.contactText}>
+    1st Floor, Vinyas Cloth Store, Bramhavara, Varambally, Chanthar, Udupi.
+  </Text>
+
+  <View style={styles.contactButtons}>
+    <TouchableOpacity
+      style={styles.contactOutline}
+      onPress={() => openURL("tel:+918970969969")}
+    >
+      <Ionicons
+        name="call-outline"
+        size={17}
+        color={GREEN}
+      />
+
+      <Text style={styles.contactOutlineText}>
+        Call
+      </Text>
+    </TouchableOpacity>
+
+    <TouchableOpacity
+      style={styles.contactFilled}
+      onPress={() =>
+        openURL("https://maps.google.com/maps?q=13.4373756%2C74.7454709&z=17&hl=en")
+      }
+    >
+      <Ionicons
+        name="navigate-outline"
+        size={17}
+        color={WHITE}
+      />
+
+      <Text style={styles.contactFilledText}>
+        Directions
+      </Text>
+    </TouchableOpacity>
+  </View>
+</View>
         {/* CONTACT / FOOTER */}
 <View style={styles.footer}>
   <Image

@@ -2004,12 +2004,10 @@ router.push({
 
       try {
         const result = await api(
-          `/prescriptions/doctor/${encodeURIComponent(
-            String(
-              selectedPrescription.id
-            )
-          )}`
-        );
+  `/prescriptions/${encodeURIComponent(
+    String(selectedPrescription.id)
+  )}`
+);
 
         setPrescriptionView({
           ...selectedPrescription,
