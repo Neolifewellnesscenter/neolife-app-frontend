@@ -1734,29 +1734,7 @@ export default function TherapistBookingRequestsScreen() {
                     value={`${detailsBooking.sessionNumber} of ${detailsBooking.totalSessions}`}
                   />
 
-                  <DetailRow
-                    icon="call-outline"
-                    label="Phone"
-                    value={
-                      detailsBooking.patientPhone
-                    }
-                  />
-
-                  <DetailRow
-                    icon="mail-outline"
-                    label="Email"
-                    value={
-                      detailsBooking.patientEmail
-                    }
-                  />
-
-                  <DetailRow
-                    icon="person-outline"
-                    label="Age / Gender"
-                    value={`${detailsBooking.patientAge} / ${formatLabel(
-                      detailsBooking.patientGender
-                    )}`}
-                  />
+                 
 
                   <View
                     style={

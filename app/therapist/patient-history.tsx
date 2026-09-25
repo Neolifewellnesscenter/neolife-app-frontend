@@ -1269,10 +1269,6 @@ export default function TherapistPatientHistoryScreen() {
                       value={selectedPatient.phoneNumber}
                     />
 
-                    <InfoBox
-                      label="Doctor"
-                      value={selectedPatient.doctorName}
-                    />
                   </View>
 
                   <View style={styles.planBox}>
@@ -1508,11 +1504,7 @@ function PatientCard({
 
           <Text style={styles.therapyName}>{patient.treatmentName}</Text>
 
-          <Text style={styles.doctorName}>
-            {patient.doctorName !== "-"
-              ? `Dr. ${patient.doctorName.replace(/^Dr\.?\s*/i, "")}`
-              : "Doctor not available"}
-          </Text>
+          
         </View>
       </View>
 

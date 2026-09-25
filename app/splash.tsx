@@ -1,19 +1,71 @@
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { useEffect } from "react";
 import { View, Text, StyleSheet, Image } from "react-native";
 
 export default function SplashScreen() {
   useEffect(() => {
-    const timer = setTimeout(() => {
-      router.replace("/onboarding");
-    }, 2500);
+    let active = true;
 
-    return () => clearTimeout(timer);
+    async function checkSession() {
+      try {
+        // Keep the splash screen visible briefly.
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+
+        const [token, doctorToken, role, onboardingDone] =
+          await Promise.all([
+            AsyncStorage.getItem("token"),
+            AsyncStorage.getItem("doctorToken"),
+            AsyncStorage.getItem("role"),
+            AsyncStorage.getItem("onboardingCompleted"),
+          ]);
+
+        if (!active) return;
+
+        const userRole = (role || "").toUpperCase();
+
+        if (userRole === "DOCTOR" && (doctorToken || token)) {
+          router.replace("/doctor/dashboard" as any);
+          return;
+        }
+
+        if (userRole === "THERAPIST" && token) {
+          router.replace("/therapist/dashboard" as any);
+          return;
+        }
+
+        if (
+          (userRole === "USER" || userRole === "PATIENT") &&
+          token
+        ) {
+          router.replace("/(tabs)");
+          return;
+        }
+
+        if (onboardingDone === "true") {
+          router.replace("/(tabs)");
+        } else {
+          router.replace("/onboarding");
+        }
+      } catch (error) {
+        console.log("Session check failed:", error);
+
+        if (active) {
+          router.replace("/(tabs)");
+        }
+      }
+    }
+
+    checkSession();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
     <View style={styles.container}>
-      {/* Circular Logo */}
       <View style={styles.logoContainer}>
         <Image
           source={require("../assets/images/main_logo.jpeg")}
@@ -42,7 +94,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
   },
-
   logoContainer: {
     width: 190,
     height: 190,
@@ -50,24 +101,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     justifyContent: "center",
     alignItems: "center",
-
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    shadowOffset: {
-      width: 0,
-      height: 5,
-    },
     elevation: 10,
   },
-
   logo: {
     width: 170,
     height: 170,
     borderRadius: 85,
     resizeMode: "cover",
   },
-
   title: {
     marginTop: 35,
     fontSize: 30,
@@ -75,7 +116,6 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     textAlign: "center",
   },
-
   subTitle: {
     marginTop: 12,
     fontSize: 16,
@@ -83,7 +123,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 24,
   },
-
   tagline: {
     marginTop: 18,
     fontSize: 15,

@@ -63,6 +63,37 @@ type Medicine = {
 const TYPES = ["", "Classical Medicine", "Patented Product", "Folklore Medicine", "Panchakavya"];
 const FORMS = ["", "Syrup", "Kashayam", "Choorna", "Tablet", "Capsule", "Oil", "Cream", "Gel", "Powder", "Drops", "Avaleha", "Arishta", "Other"];
 
+
+const FREQUENCY_OPTIONS = [
+  // One tablet
+  "1-0-0",
+  "0-1-0",
+  "0-0-1",
+  "1-1-0",
+  "1-0-1",
+  "0-1-1",
+  "1-1-1",
+
+  // Two tablets
+  "2-0-0",
+  "0-2-0",
+  "0-0-2",
+  "2-2-0",
+  "2-0-2",
+  "0-2-2",
+  "2-2-2",
+
+  // Three tablets
+  "3-0-0",
+  "0-3-0",
+  "0-0-3",
+  "3-3-0",
+  "3-0-3",
+  "0-3-3",
+  "3-3-3",
+];
+
+
 function formatValue(v: any) {
   if (!v) return "-";
   return String(v).replaceAll("_", " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
@@ -1133,6 +1164,9 @@ function Field(props:any) {
 }
 function MedicineCard({medicine:m,index,finalized,onChange,onRemove}:any) {
   const locked = finalized;
+  
+const [frequencyOpen, setFrequencyOpen] = useState(false);
+
   return <View style={s.medCard}>
     <View style={s.medHead}>
       <View style={s.medNumber}><Text style={s.medNumberText}>{index+1}</Text></View>
@@ -1153,7 +1187,68 @@ function MedicineCard({medicine:m,index,finalized,onChange,onRemove}:any) {
     </View>
     {!m.productId && <Field label="Medicine Name *" value={m.medicineName} onChangeText={(v:string)=>onChange("medicineName",v)} placeholder="Medicine name" editable={!locked}/>}
     <Field label="Dosage *" value={m.dosage} onChangeText={(v:string)=>onChange("dosage",v)} placeholder="e.g. 10 ml" editable={!finalized}/>
-    <Field label="Frequency" value={m.frequency} onChangeText={(v:string)=>onChange("frequency",v)} placeholder="e.g. Twice daily" editable={!finalized}/>
+   
+<View style={{ marginBottom: 15 }}>
+  <Text style={s.label}>Frequency</Text>
+
+  <Pressable
+    style={s.input}
+    disabled={locked}
+    onPress={() => setFrequencyOpen(true)}
+  >
+    <Text style={{ color: m.frequency ? TEXT : MUTED }}>
+      {m.frequency || "Select frequency"}
+    </Text>
+    <Ionicons
+      name="chevron-down"
+      size={18}
+      color={GREEN}
+      style={{ position: "absolute", right: 12, top: 13 }}
+    />
+  </Pressable>
+
+  <Modal
+    visible={frequencyOpen}
+    transparent
+    animationType="slide"
+    onRequestClose={() => setFrequencyOpen(false)}
+  >
+    <View style={s.modalOverlay}>
+      <View style={[s.modalCard, { maxHeight: "75%" }]}>
+        <Text style={s.modalTitle}>Select Frequency</Text>
+
+        <ScrollView>
+          {FREQUENCY_OPTIONS.map(option => (
+            <Pressable
+              key={option}
+              style={{
+                padding: 13,
+                borderBottomWidth: 1,
+                borderBottomColor: BORDER,
+              }}
+              onPress={() => {
+                onChange("frequency", option);
+                setFrequencyOpen(false);
+              }}
+            >
+              <Text style={{ color: GREEN, fontSize: 15 }}>
+                {option}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        <Pressable
+          style={s.secondary}
+          onPress={() => setFrequencyOpen(false)}
+        >
+          <Text style={s.secondaryText}>Cancel</Text>
+        </Pressable>
+      </View>
+    </View>
+  </Modal>
+</View>
+
     <View style={{flexDirection:"row",gap:10}}>
       <View style={{flex:1}}><Field label="Days *" value={m.durationDays} onChangeText={(v:string)=>onChange("durationDays",v.replace(/\D/g,""))} keyboardType="number-pad" editable={!finalized}/></View>
       <View style={{flex:1}}><Field label="Quantity *" value={m.quantity} onChangeText={(v:string)=>onChange("quantity",v.replace(/\D/g,""))} keyboardType="number-pad" editable={!finalized}/></View>

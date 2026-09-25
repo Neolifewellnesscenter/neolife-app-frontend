@@ -1,3 +1,4 @@
+
 import { router } from "expo-router";
 import { useState } from "react";
 import {
@@ -5,8 +6,8 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const slides = [
   {
@@ -28,15 +29,33 @@ const slides = [
 
 export default function OnboardingScreen() {
   const [index, setIndex] = useState(0);
+
   const item = slides[index];
 
+  // Called when the user completes or skips onboarding.
+  const finishOnboarding = async () => {
+    try {
+      await AsyncStorage.setItem(
+        "onboardingCompleted",
+        "true"
+      );
+
+      router.replace("/(tabs)");
+    } catch (error) {
+      console.log(
+        "Unable to save onboarding status:",
+        error
+      );
+    }
+  };
+
   const next = () => {
-  if (index < slides.length - 1) {
-    setIndex(index + 1);
-  } else {
-    router.replace("/(tabs)");
-  }
-};
+    if (index < slides.length - 1) {
+      setIndex((current) => current + 1);
+    } else {
+      finishOnboarding();
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -51,22 +70,30 @@ export default function OnboardingScreen() {
         {slides.map((_, i) => (
           <View
             key={i}
-            style={[styles.dot, index === i && styles.activeDot]}
+            style={[
+              styles.dot,
+              index === i && styles.activeDot,
+            ]}
           />
         ))}
       </View>
 
-      <TouchableOpacity style={styles.button} onPress={next}>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={next}
+      >
         <Text style={styles.buttonText}>
-          {index === slides.length - 1 ? "Get Started" : "Next"}
+          {index === slides.length - 1
+            ? "Get Started"
+            : "Next"}
         </Text>
       </TouchableOpacity>
 
       {index < slides.length - 1 && (
-  <TouchableOpacity onPress={() => router.replace("/(tabs)")}>
-    <Text style={styles.skip}>Skip</Text>
-  </TouchableOpacity>
-)}
+        <TouchableOpacity onPress={finishOnboarding}>
+          <Text style={styles.skip}>Skip</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -79,6 +106,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 25,
   },
+
   iconCircle: {
     width: 150,
     height: 150,
@@ -88,15 +116,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 35,
   },
+
   icon: {
     fontSize: 70,
   },
+
   title: {
     fontSize: 30,
     fontWeight: "bold",
     color: "#1B5E20",
     textAlign: "center",
   },
+
   subtitle: {
     fontSize: 16,
     color: "#555",
@@ -104,11 +135,13 @@ const styles = StyleSheet.create({
     marginTop: 15,
     lineHeight: 24,
   },
+
   dots: {
     flexDirection: "row",
     marginTop: 35,
     marginBottom: 30,
   },
+
   dot: {
     width: 10,
     height: 10,
@@ -116,21 +149,25 @@ const styles = StyleSheet.create({
     backgroundColor: "#c8e6c9",
     marginHorizontal: 5,
   },
+
   activeDot: {
     width: 24,
     backgroundColor: "#1B5E20",
   },
+
   button: {
     backgroundColor: "#1B5E20",
     paddingVertical: 14,
     paddingHorizontal: 55,
     borderRadius: 30,
   },
+
   buttonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
   },
+
   skip: {
     marginTop: 18,
     color: "#1B5E20",

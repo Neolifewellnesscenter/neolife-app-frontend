@@ -118,7 +118,21 @@ export default function LoginScreen() {
   }
 
   async function saveLoginSession(data: any) {
-  const role = String(data?.role || "USER").toUpperCase();
+  const role = String(data?.role || "").toUpperCase();
+
+const allowedRoles = [
+  "USER",
+  "PATIENT",
+  "DOCTOR",
+  "THERAPIST",
+  "ADMIN",
+  "MEDICAL_STAFF",
+  "STAFF",
+];
+
+if (!allowedRoles.includes(role)) {
+  throw new Error("Invalid or missing account role.");
+}
   const accessToken = String(data?.token || "");
   const refreshToken = String(data?.refreshToken || "");
   const userId = String(data?.id || "");
@@ -271,37 +285,47 @@ export default function LoginScreen() {
         text: result?.message || "Welcome back. Login successful.",
       });
 
-      const role = String(data?.role || "USER").toUpperCase();
-const profileCompleted = Boolean(data?.profileCompleted);
+const role = String(data?.role || "").toUpperCase();
+const profileCompleted = data?.profileCompleted === true;
 
 setTimeout(() => {
-  if (role === "DOCTOR") {
-    if (profileCompleted) {
-      router.replace("/doctor/dashboard" as any);
-    } else {
-      router.replace("/doctor/profile" as any);
-    }
-    return;
-  }
+  switch (role) {
+    case "DOCTOR":
+      router.replace(
+        profileCompleted
+          ? "/doctor/dashboard"
+          : "/doctor/profile"
+      );
+      break;
 
-  if (role === "ADMIN") {
-    router.replace("/admin/dashboard" as any);
-    return;
-  }
+    case "THERAPIST":
+      router.replace("/therapist/dashboard");
+      break;
 
-  if (role === "MEDICAL_STAFF") {
-    router.replace("/medical/dashboard" as any);
-    return;
-  }
+    case "USER":
+    case "PATIENT":
+      router.replace("/(tabs)");
+      break;
 
-  if (role === "THERAPIST") {
-    router.replace("/therapist/dashboard" as any);
-    return;
-  }
+    case "ADMIN":
+      router.replace("/admin/dashboard");
+      break;
 
-  // Normal patient
-  router.replace("/(tabs)" as any);
+    case "MEDICAL_STAFF":
+    case "STAFF":
+      router.replace("/medical/dashboard");
+      break;
+
+    default:
+      setNotice({
+        type: "error",
+        text: "Your account role is not supported.",
+      });
+  }
 }, 650);
+
+
+ 
     } catch (error: any) {
       console.log("Login failed:", error);
 

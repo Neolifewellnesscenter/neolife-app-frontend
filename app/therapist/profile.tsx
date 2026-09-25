@@ -875,14 +875,6 @@ export default function TherapistProfileScreen() {
                     }
                   />
 
-                  <AccountBox
-                    label="User ID"
-                    value={
-                      profile.userId
-                        ? String(profile.userId)
-                        : "-"
-                    }
-                  />
                 </View>
 
                 <View style={styles.readOnlyNotice}>

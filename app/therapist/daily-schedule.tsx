@@ -797,17 +797,7 @@ export default function TherapistDailyScheduleScreen() {
                     value={`Session ${detailsSession.sessionNumber} of ${detailsSession.totalSessions}`}
                   />
 
-                  <DetailRow
-                    icon="call-outline"
-                    label="Phone"
-                    value={detailsSession.patientPhone}
-                  />
-
-                  <DetailRow
-                    icon="person-circle-outline"
-                    label="Age / Gender"
-                    value={`${detailsSession.patientAge} / ${detailsSession.patientGender}`}
-                  />
+                  
 
                   <DetailRow
                     icon="checkmark-circle-outline"

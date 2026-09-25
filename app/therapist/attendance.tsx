@@ -1702,13 +1702,7 @@ export default function TherapistAttendanceScreen() {
                     )}
                   />
 
-                  <DetailRow
-                    icon="call-outline"
-                    label="Phone"
-                    value={
-                      detailsSession.patientPhone
-                    }
-                  />
+                  
 
                   {detailsSession.patientNotes ? (
                     <View

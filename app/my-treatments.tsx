@@ -12,6 +12,7 @@ import {
   useFonts as usePlayfair,
 } from "@expo-google-fonts/playfair-display";
 import { router } from "expo-router";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -141,6 +142,7 @@ export default function MyTreatmentsScreen() {
     useState<TreatmentPlan | null>(null);
 
   const [sessionDate, setSessionDate] = useState("");
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [patientNotes, setPatientNotes] = useState("");
   const [availability, setAvailability] =
     useState<TherapistAvailability[]>([]);
@@ -471,6 +473,7 @@ export default function MyTreatmentsScreen() {
 
     setBookPlan(plan);
     setSessionDate("");
+    setCalendarOpen(false);
     setPatientNotes("");
     setAvailability([]);
     setSlots([]);
@@ -547,63 +550,52 @@ export default function MyTreatmentsScreen() {
     setSessionDate(value);
     setSelectedSlot(null);
     setSlots([]);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !bookPlan?.therapistId) return;
 
-    if (!value) return;
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    // Prevent selection of previous calendar dates.
+    if (value < localDateString(new Date())) {
+      showNotice("info", "Invalid Date", "Please choose today or a future date.");
       return;
     }
 
-    if (!bookPlan?.therapistId) return;
-
     try {
       setSlotLoading(true);
-
-      let currentAvailability = availability;
-
-      if (!currentAvailability.length) {
-        currentAvailability =
-          await loadTherapistAvailability(bookPlan);
-      }
-
+      const currentAvailability = availability.length
+        ? availability
+        : await loadTherapistAvailability(bookPlan);
       const dayOfWeek = getDayOfWeek(value);
-
-      const dayAvailability =
-        currentAvailability.find(
-          (item) =>
-            item.dayOfWeek === dayOfWeek
-        );
-
-      if (!dayAvailability) {
-        showNotice(
-          "info",
-          "Therapist Not Available",
-          `${
-            bookPlan.therapistName || "The therapist"
-          } is not available on ${formatLabel(
-            dayOfWeek
-          )}. Please choose another date.`
-        );
+      // Therapists may have separate morning and evening shifts.
+      const daySchedules = currentAvailability.filter(
+        (item) => item.dayOfWeek === dayOfWeek && item.active
+      );
+      if (!daySchedules.length) {
+        showNotice("info", "Therapist Not Available",
+          `${bookPlan.therapistName || "The therapist"} is not available on ${formatLabel(dayOfWeek)}. Please choose another date.`);
         return;
       }
 
-      const generated = generateSlots(
-        dayAvailability,
-        value,
-        bookPlan
-      );
-
-      setSlots(generated);
+      const allSlots = daySchedules.flatMap((item) => generateSlots(item, value, bookPlan));
+      const unique = Array.from(
+        new Map(allSlots.map((slot) => [`${slot.startTime}-${slot.endTime}`, slot])).values()
+      ).sort((a, b) => a.startTime.localeCompare(b.startTime));
+      setSlots(unique);
     } catch (error: any) {
-      showNotice(
-        "error",
-        "Unable to Load Slots",
-        error?.message ||
-          "Unable to load available slots."
-      );
+      showNotice("error", "Unable to Load Slots", error?.message || "Unable to load available slots.");
     } finally {
       setSlotLoading(false);
     }
+  }
+
+  function selectQuickDate(daysFromToday: number) {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromToday);
+    void loadSlotsForDate(localDateString(date));
+  }
+
+  function onCalendarChange(event: DateTimePickerEvent, date?: Date) {
+    if (Platform.OS === "android") setCalendarOpen(false);
+    if (event.type === "dismissed" || !date) return;
+    void loadSlotsForDate(localDateString(date));
   }
 
   function generateSlots(
@@ -611,76 +603,29 @@ export default function MyTreatmentsScreen() {
     selectedDate: string,
     plan: TreatmentPlan
   ) {
-    const startMinutes =
-      timeToMinutes(item.startTime);
-
-    const endMinutes =
-      timeToMinutes(item.endTime);
-
-    const duration = Math.max(
-      Number(item.slotDurationMinutes) || 30,
-      1
-    );
-
-    if (
-      !Number.isFinite(startMinutes) ||
-      !Number.isFinite(endMinutes) ||
-      endMinutes <= startMinutes
-    ) {
-      return [];
-    }
+    const startMinutes = timeToMinutes(item.startTime);
+    const endMinutes = timeToMinutes(item.endTime);
+    const duration = Math.max(Number(item.slotDurationMinutes) || 30, 1);
+    if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes) || endMinutes <= startMinutes) return [];
 
     const generated: Slot[] = [];
-
-    for (
-      let current = startMinutes;
-      current + duration <= endMinutes;
-      current += duration
-    ) {
-      const startTime =
-        minutesToApiTime(current);
-
-      const endTime =
-        minutesToApiTime(current + duration);
-
-      const alreadyBookedByPatient =
-        sessions.some(
-          (session) =>
-            Number(session.therapistId) ===
-              Number(plan.therapistId) &&
-            String(
-              session.sessionDate || ""
-            ).substring(0, 10) === selectedDate &&
-            normalizeApiTime(
-              String(
-                session.startTime || ""
-              ).substring(0, 5)
-            ) === startTime &&
-            ![
-              "CANCELLED",
-              "REJECTED",
-              "MISSED",
-            ].includes(normalize(session.status))
-        );
-
-      const past = isPastSlot(
-        selectedDate,
-        startTime
+    for (let current = startMinutes; current + duration <= endMinutes; current += duration) {
+      const startTime = minutesToApiTime(current);
+      const endTime = minutesToApiTime(current + duration);
+      const alreadyBookedByPatient = sessions.some((session) =>
+        Number(session.therapistId) === Number(plan.therapistId) &&
+        String(session.sessionDate || "").substring(0, 10) === selectedDate &&
+        normalizeApiTime(String(session.startTime || "")) === startTime &&
+        !["CANCELLED", "REJECTED", "MISSED"].includes(normalize(session.status))
       );
-
+      const past = isPastSlot(selectedDate, startTime);
       generated.push({
         startTime,
         endTime,
-        available:
-          !alreadyBookedByPatient && !past,
-        unavailableReason: past
-          ? "Past time"
-          : alreadyBookedByPatient
-          ? "Already booked"
-          : "",
+        available: !alreadyBookedByPatient && !past,
+        unavailableReason: past ? "Past time" : alreadyBookedByPatient ? "Already booked" : "",
       });
     }
-
     return generated;
   }
 
@@ -1485,34 +1430,49 @@ export default function MyTreatmentsScreen() {
                 </View>
               </View>
 
-              <Text style={styles.inputLabel}>
-                SESSION DATE
-              </Text>
-
-              <View style={styles.inputWrap}>
-                <Ionicons
-                  name="calendar-outline"
-                  size={18}
-                  color={GOLD_DARK}
-                />
-
-                <TextInput
-                  value={sessionDate}
-                  onChangeText={
-                    loadSlotsForDate
-                  }
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#9AA59E"
-                  keyboardType="numbers-and-punctuation"
-                  maxLength={10}
-                  style={styles.input}
-                />
+              <Text style={styles.inputLabel}>SESSION DATE</Text>
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+                <TouchableOpacity
+                  style={[styles.dateChoice, sessionDate === localDateString(new Date()) && styles.dateChoiceActive]}
+                  onPress={() => selectQuickDate(0)}
+                >
+                  <Ionicons name="sunny-outline" size={19} color={GREEN} />
+                  <Text style={styles.dateChoiceText}>Today</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.dateChoice, sessionDate === tomorrowDateString() && styles.dateChoiceActive]}
+                  onPress={() => selectQuickDate(1)}
+                >
+                  <Ionicons name="sunny-outline" size={19} color={GREEN} />
+                  <Text style={styles.dateChoiceText}>Tomorrow</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.dateChoice}
+                  onPress={() => setCalendarOpen(true)}
+                >
+                  <Ionicons name="calendar-outline" size={19} color={GREEN} />
+                  <Text style={styles.dateChoiceText}>Calendar</Text>
+                </TouchableOpacity>
               </View>
-
-              <Text style={styles.inputHint}>
-                Enter a future date in YYYY-MM-DD
-                format.
-              </Text>
+              {!!sessionDate && (
+                <Text style={styles.inputHint}>Selected date: {formatDate(sessionDate)}</Text>
+              )}
+              {calendarOpen && (
+                <View>
+                  <DateTimePicker
+                    value={sessionDate ? new Date(`${sessionDate}T12:00:00`) : new Date()}
+                    mode="date"
+                    display={Platform.OS === "ios" ? "inline" : "calendar"}
+                    minimumDate={new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())}
+                    onChange={onCalendarChange}
+                  />
+                  {Platform.OS === "ios" && (
+                    <TouchableOpacity style={styles.dateDone} onPress={() => setCalendarOpen(false)}>
+                      <Text style={styles.dateChoiceText}>Done</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
 
               <View style={styles.slotHeadingRow}>
                 <Text style={styles.inputLabel}>
@@ -2491,6 +2451,16 @@ function normalizeApiTime(value: string) {
     2,
     "0"
   )}:00`;
+}
+
+function localDateString(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function tomorrowDateString() {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  return localDateString(date);
 }
 
 function getDayOfWeek(value: string) {
@@ -3715,6 +3685,33 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
+  dateChoice: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 4,
+    backgroundColor: WHITE,
+  },
+  dateChoiceActive: {
+    backgroundColor: MINT,
+    borderColor: GREEN,
+    borderWidth: 2,
+  },
+  dateChoiceText: {
+    color: GREEN,
+    fontFamily: "DMSans_700Bold",
+    fontSize: 12,
+  },
+  dateDone: {
+    alignSelf: "flex-end",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
   inputWrap: {
     minHeight: 50,
     paddingHorizontal: 12,
@@ -3968,3 +3965,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
 });
+
+
