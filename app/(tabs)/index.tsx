@@ -19,6 +19,14 @@ import {
 import { API_BASE_URL } from "../../services/api";
 import PatientDrawer from "../../components/PatientDrawer";
 import PatientHeader from "../../components/PatientHeader";
+import {
+  SCREEN_HEIGHT,
+  SCREEN_WIDTH,
+  isSmallPhone,
+  moderateScale,
+  fontSize,
+  horizontalPadding,
+} from "../../utils/responsive";
 
 const GREEN = "#0B3D2E";
 const GREEN_2 = "#14533D";
@@ -192,17 +200,7 @@ const doctors = [
   },
 ];
 
-type Offer = {
-  id?: number;
-  offerLabel?: string;
-  offerTitle?: string;
-  description?: string;
-  couponCode?: string;
-  discountText?: string;
-  buttonText?: string;
-  buttonLink?: string;
-  bannerImageUrl?: string;
-};
+
 
 type Review = {
   id?: number;
@@ -220,15 +218,14 @@ export default function HomeScreen() {
   const heroIndexRef = useRef(0);
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [offers, setOffers] = useState<Offer[]>([]);
-  const [offerIndex, setOfferIndex] = useState(0);
+
 
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewIndex, setReviewIndex] = useState(0);
 
   
   useEffect(() => {
-    loadOffers();
+    
     loadReviews();
     
   }, []);
@@ -253,17 +250,7 @@ export default function HomeScreen() {
     return () => clearInterval(timer);
   }, [width]);
 
-  useEffect(() => {
-    if (offers.length <= 1) return;
-
-    const timer = setInterval(() => {
-      setOfferIndex((current) =>
-        current >= offers.length - 1 ? 0 : current + 1
-      );
-    }, 4500);
-
-    return () => clearInterval(timer);
-  }, [offers]);
+  
 
   useEffect(() => {
     if (reviews.length <= 1) return;
@@ -277,21 +264,7 @@ export default function HomeScreen() {
     return () => clearInterval(timer);
   }, [reviews]);
 
-  async function loadOffers() {
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/offers/active/get`
-      );
-
-      const result = await response.json();
-
-      if (result?.success && Array.isArray(result?.data)) {
-        setOffers(result.data);
-      }
-    } catch (error) {
-      console.log("Offer loading failed:", error);
-    }
-  }
+  
 
   async function loadReviews() {
     try {
@@ -338,7 +311,74 @@ export default function HomeScreen() {
       uri: `${API_BASE_URL}${url}`,
     };
   }
+const GOOGLE_REVIEW_URL =
+  "https://g.page/r/CYv6LV08kxDZEBM";
 
+const googleReviews = [
+  {
+    id: "google-1",
+    name: "shubha bangera",
+    rating: 5,
+    review:
+      "Dr. Muralidhar Sir is one of the best doctor. His approach itself heal the pain. The staffs are friendly and v.good service. I'm thankful to Neolife wellness center Dr. Muralidhar and all the staffs for such a genuine service.",
+  },
+  {
+    id: "google-2",
+    name: "Vandana Nayak",
+    rating: 5,
+    review:
+      "I never thought I would write this when we had decided to go to this place. My dad has suffered a lot of back pain since more that 10 years now. His disc at the back was dislocated multiple times and he had gone through severe pain. He was admitted to hospital multiple times for more than a week each time. Recently my dad heard about Dr. Muraleedhar Rao at neolife and we straight away took an appointment. Doctor told me that my father's back-pain will be gone and he will be dancing by the end of that particular day. Honestly, I didn't believe him. I just nodded my head with a smile. He did some magic for 40 minutes and my father comes out saying 'I don't feel any pain anymore'. I didn't believe my father, why would I? After all I have seen him going through unbearable pain during past years. I thought he is just joking around. But indeed, the pain is gone. It's been few days now and we don't believe this magic. If you know someone who is suffering from back pain, disc problems I would recommend you to consult this doctor without having any second thoughts. He really has got some magic in his hands. I cannot thank him enough! If this never comes back. I hope your health issues will be resolved. All the best.",
+  },
+  {
+    id: "google-3",
+    name: "Parthasarathy Roy",
+    rating: 5,
+    review:
+      "We visited Dr Murlidhar Rao at his clinic in Udupi, while we were visiting our relatives. We were not sure how he could help since we stay at Hyderabad. Me, my wife, my mother and my daughters, all consulted him for various reasons. From an issue of snoring, to knee pain, to Psoriasis, and menstrual irregularities, Dr Murlidhar gave us the confidence that he would help us with all our issues. He was very patient in listening to each of us individually, and very understanding too. I must mention that he has a very unique way of connecting with his patients, in a very empathetic manner. He is not interested in selling medicines or forcing his treatments. He genuinely wants to help others heal and live better lives. Workouts, our medicines, and are continuing to do so for the past three months, which have been sent to us by courier without any hassles. The staff is also very, welcoming, supportive and helpful. As for the results, they are outstanding. Each of us has seen a distinct improvement in such a short time, and are truly blessed that we were introduced to Dr Murlidhar. I would highly recommend Neolife Wellness Clinic for any health concerns that anybody, of any age, might have.",
+  },
+  {
+    id: "google-4",
+    name: "hari prasad",
+    rating: 5,
+    review:
+      "Dr Muralidhar is a rare talent, he solved my slip disc problem like magic, almost 10 years pain gone in just few sittings. After this experience i started respecting our traditional medical system. I strongly recommend to patients to visit Neolife wellness center to have personal experience.",
+  },
+  {
+    id: "google-5",
+    name: "Vinoda Poojary",
+    rating: 5,
+    review:
+      "ನನಗೆ ತುಂಬಾ ಖುಷಿ.. ನೋವಿಲ್ಲ ಈಗ, ಆದರೆ 15 ದಿನದ ಚಿಕಿತ್ಸೆಯಿಂದ ತುಂಬಾ ಆರಾಮವಾಗಿದೆ. Thank you neolife thank doctor",
+  },
+  {
+    id: "google-6",
+    name: "Sandhya Bhat",
+    rating: 5,
+    review:
+      "Very experienced and knowledgeable doctor. Clarifies all the doubts and explains the concept of the problem and medication. Even explains how the medication works on the patient. Thank you Dr. Rao for helping me understand diabetes.",
+  },
+  {
+    id: "google-7",
+    name: "Rashida Banu",
+    rating: 5,
+    review:
+      "I had been suffering from joint pain for almost a year and tried treatment at different hospital they suggested surgery and then came to Neolife Wellness Centre and took Janu Basti treatment under Therapist Gowrav's care. My joint pain has been reduced, and I'm feeling much better. Thank you Therapist Gowrav and Neolife Wellness Centre team.",
+  },
+  {
+    id: "google-8",
+    name: "Raghavendra bhat",
+    rating: 5,
+    review:
+      "Visiting since one and a half year, underwent panchakarma shirodhara, and recently treated for headache anxiety loss of concentration through acupuncture and experienced very good healing in the body, even appetite, digestion also has increased, good experienced doctor Dr. Muralidhar Rao and charges are very reasonable compared to other ayurvedic health centres.",
+  },
+  {
+    id: "google-9",
+    name: "Raghu Ballari",
+    rating: 5,
+    review:
+      "My wife has Varicose veins problem and we had tried different hospitals and doctors for almost 5 years but there was no relief for us and one day we got to know about Dr. Muralidhar and his Ayurvedic treatment. So we visited Neolife in Udupi and within a week of treatment we could feel the difference and now my wife feels better. Doctor was so humble and listens to you very patiently and advices you like a family member. When we are speaking with him, we could feel the positive energy he spreads across. My advice to anybody out there is to go with Ayurvedic treatment and Dr. Muralidhar is the best doctor we could come across. Thank you sir.",
+  },
+];
   async function openURL(url: string) {
     try {
       await Linking.openURL(url);
@@ -359,7 +399,7 @@ export default function HomeScreen() {
   } as any);
 }
 
-  const currentOffer = offers[offerIndex];
+  
   const currentReview = reviews[reviewIndex];
 
   return (
@@ -513,68 +553,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* OFFER */}
-
-        {currentOffer && (
-          <View style={styles.sectionPad}>
-            <ImageBackground
-              source={getOfferImage(
-                currentOffer.bannerImageUrl
-              )}
-              style={styles.offerCard}
-              imageStyle={{
-                borderRadius: 28,
-              }}
-            >
-              <View style={styles.offerShade} />
-
-              <View style={styles.offerContent}>
-                <Text style={styles.offerMini}>
-                  {currentOffer.offerLabel ||
-                    "LIMITED TIME OFFER"}
-                </Text>
-
-                <Text style={styles.offerTitle}>
-                  {currentOffer.offerTitle}
-                </Text>
-
-                {!!currentOffer.description && (
-                  <Text style={styles.offerText}>
-                    {currentOffer.description}
-                  </Text>
-                )}
-
-                {!!currentOffer.discountText && (
-                  <View style={styles.discountBadge}>
-                    <Text style={styles.discountText}>
-                      {currentOffer.discountText}
-                    </Text>
-                  </View>
-                )}
-
-                {!!currentOffer.couponCode && (
-                  <Text style={styles.couponText}>
-                    Use code: {currentOffer.couponCode}
-                  </Text>
-                )}
-
-                <TouchableOpacity
-                  style={styles.offerButton}
-                  onPress={() =>
-                    router.push(
-                      "/(tabs)/products" as any
-                    )
-                  }
-                >
-                  <Text style={styles.offerButtonText}>
-                    {currentOffer.buttonText ||
-                      "Explore Now"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </ImageBackground>
-          </View>
-        )}
+        
 
         {/* THERAPIES */}
 
@@ -744,55 +723,195 @@ export default function HomeScreen() {
           />
         </View>
 
+
+
         {/* REVIEWS */}
 
-        {currentReview && (
-          <View style={styles.reviewSection}>
-            <Text style={styles.reviewKicker}>
-              REAL PATIENT STORIES
+<View style={styles.reviewSection}>
+  <Text style={styles.reviewKicker}>
+    REAL PATIENT STORIES
+  </Text>
+
+  <Text style={styles.reviewTitle}>
+    Trusted by People Like You
+  </Text>
+
+  {/* =========================
+      CLINIC REVIEW
+  ========================= */}
+
+  {currentReview && (
+    <View style={styles.reviewCard}>
+      <View style={styles.reviewSourceRow}>
+        <View style={styles.reviewSourceBadge}>
+          <Ionicons
+            name="heart"
+            size={13}
+            color={GREEN}
+          />
+
+          <Text style={styles.reviewSourceBadgeText}>
+            NEOLIFE REVIEW
+          </Text>
+        </View>
+      </View>
+
+      <Text style={styles.quoteMark}>“</Text>
+
+      <Text style={styles.reviewMessage}>
+        {currentReview.message}
+      </Text>
+
+      <View style={styles.reviewBottom}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.reviewName}>
+            {currentReview.patientName || "Patient"}
+          </Text>
+
+          <Text style={styles.reviewService}>
+            {currentReview.therapyService ||
+              "NeoLife Wellness Center"}
+          </Text>
+        </View>
+
+        <Text style={styles.reviewStars}>
+          {"★".repeat(
+            Math.max(
+              1,
+              Math.min(
+                5,
+                Number(currentReview.rating || 5)
+              )
+            )
+          )}
+        </Text>
+      </View>
+    </View>
+  )}
+
+  {/* =========================
+      GOOGLE REVIEWS
+  ========================= */}
+
+  <View style={styles.googleHeadingRow}>
+    <View style={styles.googleHeadingIcon}>
+      <Ionicons
+        name="logo-google"
+        size={20}
+        color={GREEN}
+      />
+    </View>
+
+    <View style={{ flex: 1 }}>
+      <Text style={styles.googleHeadingTitle}>
+        Google Reviews
+      </Text>
+
+      <Text style={styles.googleHeadingSub}>
+        More experiences shared by our patients
+      </Text>
+    </View>
+  </View>
+
+  <ScrollView
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    contentContainerStyle={styles.googleReviewList}
+  >
+    {googleReviews.map((review) => (
+      <View
+        key={review.id}
+        style={styles.googleReviewCard}
+      >
+        <View style={styles.googleReviewTop}>
+          <View style={styles.googleAvatar}>
+            <Text style={styles.googleAvatarText}>
+              {review.name.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.googleReviewerName}>
+              {review.name}
             </Text>
 
-            <Text style={styles.reviewTitle}>
-              Trusted by People Like You
-            </Text>
+            <View style={styles.googleSourceRow}>
+              <Ionicons
+                name="logo-google"
+                size={12}
+                color={GREEN}
+              />
 
-            <View style={styles.reviewCard}>
-              <Text style={styles.quoteMark}>“</Text>
-
-              <Text style={styles.reviewMessage}>
-                {currentReview.message}
+              <Text style={styles.googleSourceText}>
+                Google Review
               </Text>
-
-              <View style={styles.reviewBottom}>
-                <View>
-                  <Text style={styles.reviewName}>
-                    {currentReview.patientName ||
-                      "Patient"}
-                  </Text>
-
-                  <Text style={styles.reviewService}>
-                    {currentReview.therapyService ||
-                      "NeoLife Wellness Center"}
-                  </Text>
-                </View>
-
-                <Text style={styles.reviewStars}>
-                  {"★".repeat(
-                    Math.max(
-                      1,
-                      Math.min(
-                        5,
-                        Number(
-                          currentReview.rating || 5
-                        )
-                      )
-                    )
-                  )}
-                </Text>
-              </View>
             </View>
           </View>
-        )}
+        </View>
+
+        <View style={styles.googleStars}>
+          {[1, 2, 3, 4, 5].map((star) => (
+            <Ionicons
+              key={star}
+              name="star"
+              size={15}
+              color={GOLD}
+            />
+          ))}
+        </View>
+
+        <Text
+          style={styles.googleReviewMessage}
+          numberOfLines={8}
+        >
+          {review.review}
+        </Text>
+
+        <TouchableOpacity
+          style={styles.googleViewLink}
+          activeOpacity={0.8}
+          onPress={() =>
+            openURL(GOOGLE_REVIEW_URL)
+          }
+        >
+          <Text style={styles.googleViewLinkText}>
+            View on Google
+          </Text>
+
+          <Ionicons
+            name="open-outline"
+            size={14}
+            color={GREEN}
+          />
+        </TouchableOpacity>
+      </View>
+    ))}
+  </ScrollView>
+
+  <TouchableOpacity
+    style={styles.allGoogleButton}
+    activeOpacity={0.85}
+    onPress={() =>
+      openURL(GOOGLE_REVIEW_URL)
+    }
+  >
+    <Ionicons
+      name="logo-google"
+      size={18}
+      color={GREEN}
+    />
+
+    <Text style={styles.allGoogleButtonText}>
+      View All Google Reviews
+    </Text>
+
+    <Ionicons
+      name="arrow-forward"
+      size={16}
+      color={GREEN}
+    />
+  </TouchableOpacity>
+</View>
 
         {/* CTA */}
 
@@ -1168,15 +1287,23 @@ function SectionTitle({
 }
 
 const styles = StyleSheet.create({
+  /* =========================
+     SCREEN
+  ========================= */
+
   screen: {
     flex: 1,
     backgroundColor: CREAM,
   },
 
-  
+  /* =========================
+     HERO
+  ========================= */
 
   hero: {
-    height: 545,
+    minHeight: isSmallPhone ? 500 : 520,
+    height: SCREEN_HEIGHT * 0.64,
+    maxHeight: 620,
     justifyContent: "flex-end",
   },
 
@@ -1186,36 +1313,37 @@ const styles = StyleSheet.create({
   },
 
   heroContent: {
-    paddingHorizontal: 22,
-    paddingBottom: 62,
+    paddingHorizontal: horizontalPadding,
+    paddingBottom: isSmallPhone ? 48 : 62,
   },
 
   heroKicker: {
     color: GOLD_LIGHT,
-    fontSize: 11,
+    fontSize: fontSize(isSmallPhone ? 9 : 11),
     fontWeight: "900",
-    letterSpacing: 1.8,
+    letterSpacing: isSmallPhone ? 1.2 : 1.8,
   },
 
   heroTitle: {
     marginTop: 12,
     color: WHITE,
-    fontSize: 42,
-    lineHeight: 45,
+    fontSize: fontSize(isSmallPhone ? 34 : 40),
+    lineHeight: fontSize(isSmallPhone ? 39 : 45),
     fontWeight: "900",
-    letterSpacing: -1.4,
+    letterSpacing: isSmallPhone ? -0.8 : -1.4,
   },
 
   heroText: {
     marginTop: 15,
-    maxWidth: 360,
+    width: "100%",
+    maxWidth: 420,
     color: "#E5EFEA",
-    fontSize: 15,
-    lineHeight: 23,
+    fontSize: fontSize(isSmallPhone ? 13 : 15),
+    lineHeight: fontSize(isSmallPhone ? 20 : 23),
   },
 
   heroButtons: {
-    marginTop: 24,
+    marginTop: isSmallPhone ? 18 : 24,
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
@@ -1225,8 +1353,10 @@ const styles = StyleSheet.create({
     minHeight: 49,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 7,
-    paddingHorizontal: 18,
+    paddingHorizontal: isSmallPhone ? 14 : 18,
+    paddingVertical: 10,
     borderRadius: 16,
     backgroundColor: GOLD,
   },
@@ -1234,13 +1364,15 @@ const styles = StyleSheet.create({
   primaryHeroText: {
     color: GREEN,
     fontWeight: "900",
-    fontSize: 13,
+    fontSize: fontSize(isSmallPhone ? 11 : 13),
   },
 
   secondaryHeroButton: {
     minHeight: 49,
     justifyContent: "center",
-    paddingHorizontal: 17,
+    alignItems: "center",
+    paddingHorizontal: isSmallPhone ? 14 : 17,
+    paddingVertical: 10,
     borderRadius: 16,
     backgroundColor: "rgba(255,255,255,.12)",
     borderWidth: 1,
@@ -1250,28 +1382,43 @@ const styles = StyleSheet.create({
   secondaryHeroText: {
     color: WHITE,
     fontWeight: "800",
-    fontSize: 13,
+    fontSize: fontSize(isSmallPhone ? 11 : 13),
   },
+
+  /* =========================
+     QUICK ACTIONS
+  ========================= */
 
   quickWrap: {
     marginTop: -27,
-    marginHorizontal: 15,
+    marginHorizontal: horizontalPadding,
     padding: 10,
     flexDirection: "row",
+    flexWrap: "wrap",
     borderRadius: 24,
     backgroundColor: WHITE,
     elevation: 8,
+
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
   },
 
   quickCard: {
-    flex: 1,
+    width: isSmallPhone ? "50%" : "25%",
     alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 10,
+    paddingHorizontal: 3,
   },
 
   quickIcon: {
-    width: 42,
-    height: 42,
+    width: isSmallPhone ? 39 : 42,
+    height: isSmallPhone ? 39 : 42,
     borderRadius: 14,
     backgroundColor: MINT,
     alignItems: "center",
@@ -1282,19 +1429,25 @@ const styles = StyleSheet.create({
     marginTop: 7,
     color: GREEN,
     fontWeight: "900",
-    fontSize: 12,
+    fontSize: fontSize(isSmallPhone ? 11 : 12),
+    textAlign: "center",
   },
 
   quickSubtitle: {
     marginTop: 1,
     color: MUTED,
-    fontSize: 9,
+    fontSize: fontSize(isSmallPhone ? 8 : 9),
+    textAlign: "center",
   },
 
+  /* =========================
+     MARKETING
+  ========================= */
+
   marketingCard: {
-    marginTop: 48,
-    marginHorizontal: 16,
-    padding: 24,
+    marginTop: isSmallPhone ? 38 : 48,
+    marginHorizontal: horizontalPadding,
+    padding: isSmallPhone ? 19 : 24,
     borderRadius: 28,
     backgroundColor: GREEN,
   },
@@ -1302,21 +1455,23 @@ const styles = StyleSheet.create({
   marketingBadge: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
     gap: 6,
   },
 
   marketingBadgeText: {
+    flexShrink: 1,
     color: GOLD_LIGHT,
-    fontSize: 10,
+    fontSize: fontSize(isSmallPhone ? 9 : 10),
     fontWeight: "900",
-    letterSpacing: 0.8,
+    letterSpacing: isSmallPhone ? 0.5 : 0.8,
   },
 
   marketingTitle: {
     marginTop: 12,
     color: WHITE,
-    fontSize: 27,
-    lineHeight: 32,
+    fontSize: fontSize(isSmallPhone ? 23 : 27),
+    lineHeight: fontSize(isSmallPhone ? 28 : 32),
     fontWeight: "900",
     letterSpacing: -0.6,
   },
@@ -1324,8 +1479,8 @@ const styles = StyleSheet.create({
   marketingText: {
     marginTop: 11,
     color: "#CEDDD5",
-    lineHeight: 21,
-    fontSize: 13,
+    lineHeight: fontSize(isSmallPhone ? 19 : 21),
+    fontSize: fontSize(isSmallPhone ? 12 : 13),
   },
 
   marketingButton: {
@@ -1333,113 +1488,43 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 7,
     backgroundColor: GREEN_2,
-    paddingHorizontal: 17,
+    paddingHorizontal: isSmallPhone ? 14 : 17,
     paddingVertical: 12,
     borderRadius: 15,
+    maxWidth: "100%",
   },
 
   marketingButtonText: {
+    flexShrink: 1,
     color: WHITE,
     fontWeight: "800",
-    fontSize: 12,
+    fontSize: fontSize(isSmallPhone ? 11 : 12),
   },
 
-  sectionPad: {
-    marginTop: 50,
-    paddingHorizontal: 16,
-  },
-
-  offerCard: {
-    minHeight: 320,
-    justifyContent: "flex-end",
-    overflow: "hidden",
-    borderRadius: 28,
-  },
-
-  offerShade: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(12,51,38,.72)",
-  },
-
-  offerContent: {
-    padding: 24,
-  },
-
-  offerMini: {
-    color: GOLD_LIGHT,
-    fontWeight: "900",
-    fontSize: 10,
-    letterSpacing: 1.3,
-  },
-
-  offerTitle: {
-    marginTop: 9,
-    color: WHITE,
-    fontWeight: "900",
-    fontSize: 28,
-    lineHeight: 32,
-  },
-
-  offerText: {
-    marginTop: 9,
-    color: "#E5EFEA",
-    lineHeight: 20,
-  },
-
-  discountBadge: {
-    alignSelf: "flex-start",
-    marginTop: 13,
-    paddingHorizontal: 13,
-    paddingVertical: 7,
-    borderRadius: 12,
-    backgroundColor: GOLD,
-  },
-
-  discountText: {
-    color: GREEN,
-    fontSize: 17,
-    fontWeight: "900",
-  },
-
-  couponText: {
-    marginTop: 10,
-    color: WHITE,
-    fontWeight: "700",
-  },
-
-  offerButton: {
-    marginTop: 16,
-    alignSelf: "flex-start",
-    backgroundColor: WHITE,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 14,
-  },
-
-  offerButtonText: {
-    color: GREEN,
-    fontWeight: "900",
-  },
+  /* =========================
+     SECTION HEADINGS
+  ========================= */
 
   sectionTitleWrap: {
-    marginTop: 62,
-    paddingHorizontal: 20,
+    marginTop: isSmallPhone ? 48 : 58,
+    paddingHorizontal: horizontalPadding,
   },
 
   eyebrow: {
     color: GOLD,
-    fontSize: 10,
+    fontSize: fontSize(isSmallPhone ? 9 : 10),
     fontWeight: "900",
-    letterSpacing: 1.4,
+    letterSpacing: isSmallPhone ? 1.1 : 1.4,
   },
 
   sectionTitle: {
     marginTop: 8,
     color: TEXT,
-    fontSize: 27,
-    lineHeight: 32,
+    fontSize: fontSize(isSmallPhone ? 23 : 27),
+    lineHeight: fontSize(isSmallPhone ? 28 : 32),
     fontWeight: "900",
     letterSpacing: -0.6,
   },
@@ -1447,29 +1532,45 @@ const styles = StyleSheet.create({
   sectionText: {
     marginTop: 7,
     color: MUTED,
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: fontSize(isSmallPhone ? 12 : 13),
+    lineHeight: fontSize(isSmallPhone ? 18 : 20),
   },
 
   horizontalList: {
-    paddingHorizontal: 16,
+    paddingHorizontal: horizontalPadding,
     paddingTop: 20,
     paddingBottom: 8,
     gap: 13,
   },
 
+  /* =========================
+     THERAPIES
+  ========================= */
+
   therapyCard: {
-    width: 210,
+    width: Math.min(
+      SCREEN_WIDTH * (isSmallPhone ? 0.68 : 0.56),
+      230
+    ),
+    minWidth: isSmallPhone ? 180 : 195,
     minHeight: 196,
-    padding: 19,
+    padding: isSmallPhone ? 16 : 19,
     borderRadius: 24,
     backgroundColor: WHITE,
     elevation: 3,
+
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
   },
 
   therapyIcon: {
-    width: 52,
-    height: 52,
+    width: isSmallPhone ? 47 : 52,
+    height: isSmallPhone ? 47 : 52,
     borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
@@ -1480,14 +1581,15 @@ const styles = StyleSheet.create({
     marginTop: 15,
     color: TEXT,
     fontWeight: "900",
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: fontSize(isSmallPhone ? 14 : 16),
+    lineHeight: fontSize(isSmallPhone ? 18 : 20),
   },
 
   therapySub: {
     marginTop: 6,
     color: MUTED,
-    fontSize: 11,
+    fontSize: fontSize(isSmallPhone ? 10 : 11),
+    lineHeight: fontSize(isSmallPhone ? 15 : 17),
   },
 
   cardLink: {
@@ -1501,59 +1603,82 @@ const styles = StyleSheet.create({
   cardLinkText: {
     color: GOLD,
     fontWeight: "900",
-    fontSize: 11,
+    fontSize: fontSize(isSmallPhone ? 10 : 11),
   },
+
+  /* =========================
+     BENEFITS
+  ========================= */
 
   benefitsWrap: {
     marginTop: 20,
-    paddingHorizontal: 16,
+    paddingHorizontal: horizontalPadding,
     gap: 11,
   },
 
   benefitCard: {
     flexDirection: "row",
-    gap: 14,
-    padding: 17,
+    alignItems: "flex-start",
+    gap: isSmallPhone ? 10 : 14,
+    padding: isSmallPhone ? 14 : 17,
     borderRadius: 20,
     backgroundColor: WHITE,
   },
 
   benefitIcon: {
-    width: 48,
-    height: 48,
+    width: isSmallPhone ? 43 : 48,
+    height: isSmallPhone ? 43 : 48,
     borderRadius: 15,
     backgroundColor: MINT,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
 
   benefitTitle: {
     color: TEXT,
     fontWeight: "900",
-    fontSize: 15,
+    fontSize: fontSize(isSmallPhone ? 14 : 15),
   },
 
   benefitText: {
     marginTop: 4,
     color: MUTED,
-    lineHeight: 18,
-    fontSize: 12,
+    lineHeight: fontSize(isSmallPhone ? 17 : 18),
+    fontSize: fontSize(isSmallPhone ? 11 : 12),
   },
 
+  /* =========================
+     DOCTORS
+  ========================= */
+
   doctorCard: {
-    width: 235,
-    padding: 18,
+    width: Math.min(
+      SCREEN_WIDTH * (isSmallPhone ? 0.72 : 0.62),
+      250
+    ),
+    minWidth: isSmallPhone ? 205 : 220,
+    padding: isSmallPhone ? 15 : 18,
     borderRadius: 25,
     alignItems: "center",
     backgroundColor: WHITE,
     elevation: 3,
+
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
   },
 
   doctorImage: {
-    width: 118,
-    height: 118,
-    borderRadius: 59,
+    width: isSmallPhone ? 100 : 118,
+    height: isSmallPhone ? 100 : 118,
+    borderRadius: isSmallPhone ? 50 : 59,
     backgroundColor: MINT,
+    resizeMode: "cover",
   },
 
   doctorName: {
@@ -1561,7 +1686,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: TEXT,
     fontWeight: "900",
-    fontSize: 16,
+    fontSize: fontSize(isSmallPhone ? 14 : 16),
   },
 
   doctorQualification: {
@@ -1569,26 +1694,29 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: GOLD,
     fontWeight: "800",
-    fontSize: 11,
+    fontSize: fontSize(isSmallPhone ? 10 : 11),
   },
 
   doctorSpecialty: {
     marginTop: 5,
     color: MUTED,
-    fontSize: 11,
+    fontSize: fontSize(isSmallPhone ? 10 : 11),
+    lineHeight: fontSize(isSmallPhone ? 15 : 17),
     textAlign: "center",
   },
 
-
+  /* =========================
+     MEET DOCTORS
+  ========================= */
 
   meetDoctorsWrap: {
-    paddingHorizontal: 16,
+    paddingHorizontal: horizontalPadding,
     paddingTop: 18,
   },
 
   meetDoctorsButton: {
     minHeight: 72,
-    paddingHorizontal: 16,
+    paddingHorizontal: isSmallPhone ? 13 : 16,
     paddingVertical: 12,
     borderRadius: 20,
     backgroundColor: GOLD_LIGHT,
@@ -1596,161 +1724,468 @@ const styles = StyleSheet.create({
     borderColor: "#E4CC83",
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: isSmallPhone ? 9 : 12,
   },
 
   meetDoctorsIcon: {
-    width: 45,
-    height: 45,
+    width: isSmallPhone ? 41 : 45,
+    height: isSmallPhone ? 41 : 45,
     borderRadius: 15,
     backgroundColor: WHITE,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
 
   meetDoctorsButtonText: {
     color: GREEN,
-    fontSize: 14,
+    fontSize: fontSize(isSmallPhone ? 13 : 14),
     fontWeight: "900",
   },
 
   meetDoctorsButtonSub: {
     marginTop: 2,
     color: "#6F684F",
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: fontSize(isSmallPhone ? 9 : 10),
+    lineHeight: fontSize(isSmallPhone ? 13 : 14),
   },
 
+  /* =========================
+     BEAUTY
+  ========================= */
+
   beautyCard: {
-    marginTop: 62,
-    marginHorizontal: 16,
+    marginTop: isSmallPhone ? 48 : 62,
+    marginHorizontal: horizontalPadding,
     borderRadius: 28,
     overflow: "hidden",
     backgroundColor: "#F7EFE8",
   },
 
   beautyTextWrap: {
-    padding: 23,
+    padding: isSmallPhone ? 18 : 23,
   },
 
   beautyKicker: {
     color: "#9B6D45",
     fontWeight: "900",
-    fontSize: 10,
-    letterSpacing: 1.4,
+    fontSize: fontSize(isSmallPhone ? 9 : 10),
+    letterSpacing: isSmallPhone ? 1.1 : 1.4,
   },
 
   beautyTitle: {
     marginTop: 9,
     color: "#513928",
-    fontSize: 28,
-    lineHeight: 32,
+    fontSize: fontSize(isSmallPhone ? 24 : 28),
+    lineHeight: fontSize(isSmallPhone ? 29 : 32),
     fontWeight: "900",
   },
 
   beautyText: {
     marginTop: 9,
     color: "#806B5C",
-    lineHeight: 20,
-    fontSize: 13,
+    lineHeight: fontSize(isSmallPhone ? 18 : 20),
+    fontSize: fontSize(isSmallPhone ? 12 : 13),
   },
 
   beautyButton: {
     marginTop: 17,
     alignSelf: "flex-start",
-    paddingHorizontal: 16,
+    paddingHorizontal: isSmallPhone ? 14 : 16,
     paddingVertical: 11,
     borderRadius: 13,
     backgroundColor: "#513928",
+    maxWidth: "100%",
   },
 
   beautyButtonText: {
     color: WHITE,
     fontWeight: "800",
-    fontSize: 12,
+    fontSize: fontSize(isSmallPhone ? 11 : 12),
   },
 
   beautyImage: {
-    width: "100%",
-    height: 220,
-    resizeMode: "cover",
-  },
+  width: "100%",
+  height: isSmallPhone ? 190 : 220,
+  resizeMode: "cover",
+},
+
+  /* =========================
+     REVIEWS
+  ========================= */
 
   reviewSection: {
-    marginTop: 62,
-    paddingVertical: 45,
-    paddingHorizontal: 16,
+    marginTop: isSmallPhone ? 48 : 62,
+    paddingVertical: isSmallPhone ? 35 : 45,
+    paddingHorizontal: horizontalPadding,
     backgroundColor: GREEN,
   },
 
   reviewKicker: {
     color: GOLD_LIGHT,
-    fontSize: 10,
+    fontSize: fontSize(isSmallPhone ? 9 : 10),
     fontWeight: "900",
-    letterSpacing: 1.4,
+    letterSpacing: isSmallPhone ? 1.1 : 1.4,
   },
 
   reviewTitle: {
     marginTop: 8,
     color: WHITE,
-    fontSize: 28,
+    fontSize: fontSize(isSmallPhone ? 24 : 28),
+    lineHeight: fontSize(isSmallPhone ? 29 : 34),
     fontWeight: "900",
   },
 
   reviewCard: {
     marginTop: 20,
-    padding: 21,
+    padding: isSmallPhone ? 17 : 21,
     borderRadius: 23,
     backgroundColor: "rgba(255,255,255,.09)",
   },
 
   quoteMark: {
     color: GOLD,
-    fontSize: 45,
-    lineHeight: 45,
+    fontSize: fontSize(isSmallPhone ? 38 : 45),
+    lineHeight: fontSize(isSmallPhone ? 38 : 45),
   },
 
   reviewMessage: {
     marginTop: 2,
     color: WHITE,
-    lineHeight: 22,
-    fontSize: 14,
+    lineHeight: fontSize(isSmallPhone ? 20 : 22),
+    fontSize: fontSize(isSmallPhone ? 13 : 14),
   },
 
   reviewBottom: {
     marginTop: 20,
-    flexDirection: "row",
+    flexDirection: isSmallPhone ? "column" : "row",
     justifyContent: "space-between",
+    alignItems: isSmallPhone ? "flex-start" : "center",
     gap: 10,
   },
 
   reviewName: {
     color: WHITE,
     fontWeight: "900",
+    fontSize: fontSize(isSmallPhone ? 13 : 14),
   },
 
   reviewService: {
     marginTop: 3,
     color: "#C6D7CE",
-    fontSize: 10,
+    fontSize: fontSize(isSmallPhone ? 9 : 10),
   },
 
   reviewStars: {
     color: GOLD,
+    fontSize: fontSize(isSmallPhone ? 14 : 16),
+  },
+  /* =========================
+   GOOGLE REVIEWS
+========================= */
+
+googleHeadingRow: {
+  marginTop: 28,
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 11,
+},
+
+googleHeadingIcon: {
+  width: 42,
+  height: 42,
+  borderRadius: 14,
+
+  backgroundColor: GOLD_LIGHT,
+
+  alignItems: "center",
+  justifyContent: "center",
+
+  flexShrink: 0,
+},
+
+googleHeadingTitle: {
+  color: WHITE,
+
+  fontSize: fontSize(
+    isSmallPhone ? 16 : 18
+  ),
+
+  fontWeight: "900",
+},
+
+googleHeadingSub: {
+  marginTop: 3,
+
+  color: "#C7D9D0",
+
+  fontSize: fontSize(
+    isSmallPhone ? 9 : 10
+  ),
+
+  lineHeight: fontSize(
+    isSmallPhone ? 13 : 15
+  ),
+},
+
+googleReviewList: {
+  paddingTop: 17,
+  paddingBottom: 8,
+
+  paddingRight: horizontalPadding,
+
+  gap: 12,
+},
+
+googleReviewCard: {
+  width: Math.min(
+    SCREEN_WIDTH *
+      (isSmallPhone ? 0.78 : 0.72),
+    310
+  ),
+
+  minHeight: isSmallPhone ? 270 : 285,
+
+  padding: isSmallPhone ? 16 : 18,
+
+  borderRadius: 22,
+
+  backgroundColor: WHITE,
+
+  borderWidth: 1,
+  borderColor: "#EFE9D8",
+
+  elevation: 4,
+
+  shadowColor: "#000",
+
+  shadowOffset: {
+    width: 0,
+    height: 3,
   },
 
+  shadowOpacity: 0.1,
+
+  shadowRadius: 7,
+},
+
+googleReviewTop: {
+  flexDirection: "row",
+
+  alignItems: "center",
+
+  gap: 10,
+},
+
+googleAvatar: {
+  width: isSmallPhone ? 40 : 44,
+
+  height: isSmallPhone ? 40 : 44,
+
+  borderRadius: isSmallPhone ? 20 : 22,
+
+  backgroundColor: GREEN,
+
+  alignItems: "center",
+
+  justifyContent: "center",
+
+  flexShrink: 0,
+},
+
+googleAvatarText: {
+  color: WHITE,
+
+  fontSize: fontSize(
+    isSmallPhone ? 14 : 16
+  ),
+
+  fontWeight: "900",
+},
+
+googleReviewerName: {
+  color: TEXT,
+
+  fontSize: fontSize(
+    isSmallPhone ? 12 : 13
+  ),
+
+  fontWeight: "900",
+},
+
+googleSourceRow: {
+  marginTop: 3,
+
+  flexDirection: "row",
+
+  alignItems: "center",
+
+  gap: 4,
+},
+
+googleSourceText: {
+  color: MUTED,
+
+  fontSize: fontSize(
+    isSmallPhone ? 8 : 9
+  ),
+
+  fontWeight: "700",
+},
+
+googleStars: {
+  marginTop: 13,
+
+  flexDirection: "row",
+
+  alignItems: "center",
+
+  gap: 2,
+},
+
+googleReviewMessage: {
+  marginTop: 12,
+
+  flex: 1,
+
+  color: TEXT,
+
+  fontSize: fontSize(
+    isSmallPhone ? 11 : 12
+  ),
+
+  lineHeight: fontSize(
+    isSmallPhone ? 17 : 19
+  ),
+},
+
+googleViewLink: {
+  marginTop: 15,
+
+  paddingTop: 12,
+
+  borderTopWidth: 1,
+
+  borderTopColor: "#EEE9DC",
+
+  flexDirection: "row",
+
+  alignItems: "center",
+
+  gap: 5,
+},
+
+googleViewLinkText: {
+  color: GREEN,
+
+  fontSize: fontSize(
+    isSmallPhone ? 10 : 11
+  ),
+
+  fontWeight: "900",
+},
+
+allGoogleButton: {
+  marginTop: 16,
+
+  minHeight: 49,
+
+  paddingHorizontal: 15,
+
+  paddingVertical: 11,
+
+  borderRadius: 16,
+
+  backgroundColor: GOLD,
+
+  flexDirection: "row",
+
+  alignItems: "center",
+
+  justifyContent: "center",
+
+  gap: 8,
+
+  elevation: 2,
+
+  shadowColor: "#000",
+
+  shadowOffset: {
+    width: 0,
+    height: 2,
+  },
+
+  shadowOpacity: 0.08,
+
+  shadowRadius: 4,
+},
+
+allGoogleButtonText: {
+  flexShrink: 1,
+
+  color: GREEN,
+
+  fontSize: fontSize(
+    isSmallPhone ? 11 : 12
+  ),
+
+  fontWeight: "900",
+
+  textAlign: "center",
+},
+
+reviewSourceRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  marginBottom: 12,
+},
+
+reviewSourceBadge: {
+  alignSelf: "flex-start",
+
+  flexDirection: "row",
+  alignItems: "center",
+
+  gap: 6,
+
+  paddingHorizontal: 11,
+  paddingVertical: 7,
+
+  borderRadius: 20,
+
+  backgroundColor: GOLD_LIGHT,
+
+  borderWidth: 1,
+  borderColor: "rgba(214,180,91,0.55)",
+},
+
+reviewSourceBadgeText: {
+  color: GREEN,
+
+  fontSize: fontSize(
+    isSmallPhone ? 9 : 10
+  ),
+
+  fontWeight: "900",
+
+  letterSpacing: 0.7,
+},
+  /* =========================
+     FINAL CTA
+  ========================= */
+
   finalCta: {
-    marginTop: 60,
-    marginHorizontal: 16,
-    padding: 28,
+    marginTop: isSmallPhone ? 48 : 60,
+    marginHorizontal: horizontalPadding,
+    padding: isSmallPhone ? 21 : 28,
     alignItems: "center",
     borderRadius: 28,
     backgroundColor: GREEN,
   },
 
   finalIcon: {
-    width: 52,
-    height: 52,
+    width: isSmallPhone ? 47 : 52,
+    height: isSmallPhone ? 47 : 52,
     borderRadius: 17,
     backgroundColor: "rgba(255,255,255,.1)",
     alignItems: "center",
@@ -1761,7 +2196,8 @@ const styles = StyleSheet.create({
     marginTop: 15,
     color: WHITE,
     textAlign: "center",
-    fontSize: 26,
+    fontSize: fontSize(isSmallPhone ? 22 : 26),
+    lineHeight: fontSize(isSmallPhone ? 27 : 31),
     fontWeight: "900",
   },
 
@@ -1769,16 +2205,20 @@ const styles = StyleSheet.create({
     marginTop: 9,
     color: "#CEDDD5",
     textAlign: "center",
-    lineHeight: 20,
+    fontSize: fontSize(isSmallPhone ? 12 : 14),
+    lineHeight: fontSize(isSmallPhone ? 18 : 20),
   },
 
   finalButton: {
     marginTop: 19,
     minHeight: 48,
+    maxWidth: "100%",
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 7,
-    paddingHorizontal: 20,
+    paddingHorizontal: isSmallPhone ? 16 : 20,
+    paddingVertical: 10,
     borderRadius: 15,
     backgroundColor: GOLD,
   },
@@ -1786,12 +2226,17 @@ const styles = StyleSheet.create({
   finalButtonText: {
     color: GREEN,
     fontWeight: "900",
+    fontSize: fontSize(isSmallPhone ? 12 : 14),
   },
+
+  /* =========================
+     CONTACT CARDS
+  ========================= */
 
   contactCard: {
     marginTop: 35,
-    marginHorizontal: 16,
-    padding: 23,
+    marginHorizontal: horizontalPadding,
+    padding: isSmallPhone ? 18 : 23,
     borderRadius: 25,
     backgroundColor: WHITE,
   },
@@ -1799,32 +2244,34 @@ const styles = StyleSheet.create({
   contactKicker: {
     color: GOLD,
     fontWeight: "900",
-    fontSize: 10,
-    letterSpacing: 1.2,
+    fontSize: fontSize(isSmallPhone ? 9 : 10),
+    letterSpacing: isSmallPhone ? 1 : 1.2,
   },
 
   contactTitle: {
     marginTop: 7,
     color: TEXT,
-    fontSize: 20,
+    fontSize: fontSize(isSmallPhone ? 17 : 20),
+    lineHeight: fontSize(isSmallPhone ? 22 : 25),
     fontWeight: "900",
   },
 
   contactText: {
     marginTop: 7,
     color: MUTED,
-    lineHeight: 19,
-    fontSize: 12,
+    lineHeight: fontSize(isSmallPhone ? 18 : 19),
+    fontSize: fontSize(isSmallPhone ? 11 : 12),
   },
 
   contactButtons: {
     marginTop: 17,
-    flexDirection: "row",
+    flexDirection: isSmallPhone ? "column" : "row",
     gap: 10,
   },
 
   contactOutline: {
-    flex: 1,
+    flex: isSmallPhone ? undefined : 1,
+    width: isSmallPhone ? "100%" : undefined,
     minHeight: 45,
     borderRadius: 14,
     borderWidth: 1,
@@ -1838,10 +2285,12 @@ const styles = StyleSheet.create({
   contactOutlineText: {
     color: GREEN,
     fontWeight: "800",
+    fontSize: fontSize(isSmallPhone ? 12 : 14),
   },
 
   contactFilled: {
-    flex: 1,
+    flex: isSmallPhone ? undefined : 1,
+    width: isSmallPhone ? "100%" : undefined,
     minHeight: 45,
     borderRadius: 14,
     backgroundColor: GREEN,
@@ -1854,96 +2303,120 @@ const styles = StyleSheet.create({
   contactFilledText: {
     color: WHITE,
     fontWeight: "800",
+    fontSize: fontSize(isSmallPhone ? 12 : 14),
   },
 
+  /* =========================
+     FOOTER
+  ========================= */
+
   footer: {
-  marginTop: 58,
-  paddingTop: 42,
-  paddingBottom: 34,
-  paddingHorizontal: 22,
-  alignItems: "center",
-  backgroundColor: "#0A271A",
-},
+    marginTop: isSmallPhone ? 45 : 58,
+    paddingTop: isSmallPhone ? 34 : 42,
+    paddingBottom: 34,
+    paddingHorizontal: horizontalPadding,
+    alignItems: "center",
+    backgroundColor: "#0A271A",
+  },
 
-footerLogo: {
-  width: 62,
-  height: 62,
-  borderRadius: 21,
-},
+  footerLogo: {
+    width: isSmallPhone ? 56 : 62,
+    height: isSmallPhone ? 56 : 62,
+    borderRadius: isSmallPhone ? 18 : 21,
+  },
 
-footerBrand: {
-  marginTop: 13,
-  color: WHITE,
-  fontSize: 20,
-  fontWeight: "900",
-},
+  footerBrand: {
+    marginTop: 13,
+    color: WHITE,
+    fontSize: fontSize(isSmallPhone ? 18 : 20),
+    fontWeight: "900",
+    textAlign: "center",
+  },
 
-footerTagline: {
-  marginTop: 8,
-  maxWidth: 420,
-  color: "#C6D4CB",
-  textAlign: "center",
-  fontSize: 12,
-  lineHeight: 19,
-},
+  footerTagline: {
+    marginTop: 8,
+    width: "100%",
+    maxWidth: 420,
+    color: "#C6D4CB",
+    textAlign: "center",
+    fontSize: fontSize(isSmallPhone ? 11 : 12),
+    lineHeight: fontSize(isSmallPhone ? 17 : 19),
+  },
 
-footerRow: {
-  marginTop: 13,
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 7,
-},
+  footerRow: {
+    marginTop: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    gap: 7,
+  },
 
-footerText: {
-  color: "#E1EAE4",
-  fontSize: 12,
-  fontWeight: "600",
-},
+  footerText: {
+    flexShrink: 1,
+    color: "#E1EAE4",
+    fontSize: fontSize(isSmallPhone ? 11 : 12),
+    fontWeight: "600",
+    textAlign: "center",
+  },
 
-footerAddress: {
-  marginTop: 15,
-  maxWidth: 390,
-  color: "#AFC0B6",
-  textAlign: "center",
-  fontSize: 11,
-  lineHeight: 18,
-},
+  footerAddress: {
+    marginTop: 15,
+    width: "100%",
+    maxWidth: 390,
+    color: "#AFC0B6",
+    textAlign: "center",
+    fontSize: fontSize(isSmallPhone ? 10 : 11),
+    lineHeight: fontSize(isSmallPhone ? 16 : 18),
+  },
 
-socialRow: {
-  marginTop: 20,
-  flexDirection: "row",
-  gap: 10,
-},
+  socialRow: {
+    marginTop: 20,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 10,
+  },
 
-socialButton: {
-  width: 42,
-  height: 42,
-  borderRadius: 14,
-  backgroundColor: "rgba(255,255,255,.10)",
-  alignItems: "center",
-  justifyContent: "center",
-},
+  socialButton: {
+    width: isSmallPhone ? 39 : 42,
+    height: isSmallPhone ? 39 : 42,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,.10)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
-copyright: {
-  marginTop: 25,
-  color: "#81978A",
-  fontSize: 10,
-  textAlign: "center",
-},
+  copyright: {
+    marginTop: 25,
+    color: "#81978A",
+    fontSize: fontSize(isSmallPhone ? 9 : 10),
+    lineHeight: fontSize(15),
+    textAlign: "center",
+  },
+
+  /* =========================
+     FLOATING WHATSAPP
+  ========================= */
 
   whatsapp: {
     position: "absolute",
-    right: 18,
-    bottom:
-      Platform.OS === "web" ? 20 : 82,
-    width: 56,
-    height: 56,
-    borderRadius: 18,
+    right: isSmallPhone ? 14 : 18,
+    bottom: Platform.OS === "web" ? 20 : 82,
+    width: isSmallPhone ? 52 : 56,
+    height: isSmallPhone ? 52 : 56,
+    borderRadius: isSmallPhone ? 17 : 18,
     backgroundColor: "#20C764",
     alignItems: "center",
     justifyContent: "center",
     elevation: 8,
+
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
   },
-
-
 });

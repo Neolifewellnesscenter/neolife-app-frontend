@@ -7,11 +7,17 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
+import {
+  fontSize,
+  horizontalPadding,
+  isSmallPhone,
+} from "../utils/responsive";
 
 type TherapistDrawerProps = {
   visible: boolean;
@@ -90,6 +96,13 @@ export default function TherapistDrawer({
   onClose,
   activeRoute,
 }: TherapistDrawerProps) {
+  const { width } = useWindowDimensions();
+
+  const drawerWidth = Math.min(
+    width * (width < 360 ? 0.92 : width < 430 ? 0.86 : 0.8),
+    360
+  );
+
   const [therapistName, setTherapistName] =
     useState("Therapist");
 
@@ -213,7 +226,7 @@ export default function TherapistDrawer({
         />
 
         {/* DRAWER */}
-        <View style={styles.drawer}>
+        <View style={[styles.drawer, { width: drawerWidth }]}>
           {/* HEADER */}
           <View style={styles.drawerHeader}>
             <View style={styles.brandRow}>
@@ -410,8 +423,7 @@ const styles = StyleSheet.create({
   },
 
   drawer: {
-    width: "84%",
-    maxWidth: 350,
+    maxWidth: 360,
 
     height: "100%",
 
@@ -431,9 +443,9 @@ const styles = StyleSheet.create({
   drawerHeader: {
     backgroundColor: "#FFFFFF",
 
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 16,
+    paddingHorizontal: isSmallPhone ? 12 : horizontalPadding,
+    paddingTop: isSmallPhone ? 14 : 18,
+    paddingBottom: isSmallPhone ? 13 : 16,
 
     borderBottomWidth: 1,
     borderBottomColor: "#E3EAE6",
@@ -445,10 +457,10 @@ const styles = StyleSheet.create({
   },
 
   logoBox: {
-    width: 45,
-    height: 45,
+    width: isSmallPhone ? 40 : 45,
+    height: isSmallPhone ? 40 : 45,
 
-    borderRadius: 14,
+    borderRadius: isSmallPhone ? 12 : 14,
 
     backgroundColor: "#123E32",
 
@@ -459,20 +471,20 @@ const styles = StyleSheet.create({
   logoText: {
     color: "#E7C66B",
 
-    fontSize: 22,
+    fontSize: fontSize(isSmallPhone ? 19 : 22),
     fontWeight: "900",
   },
 
   brandTextContainer: {
     flex: 1,
 
-    marginLeft: 11,
+    marginLeft: isSmallPhone ? 9 : 11,
   },
 
   brandName: {
     color: "#123E32",
 
-    fontSize: 21,
+    fontSize: fontSize(isSmallPhone ? 18 : 21),
     fontWeight: "900",
   },
 
@@ -481,17 +493,17 @@ const styles = StyleSheet.create({
 
     color: "#B8923B",
 
-    fontSize: 9,
+    fontSize: fontSize(isSmallPhone ? 8 : 9),
     fontWeight: "900",
 
     letterSpacing: 1.3,
   },
 
   closeButton: {
-    width: 40,
-    height: 40,
+    width: isSmallPhone ? 36 : 40,
+    height: isSmallPhone ? 36 : 40,
 
-    borderRadius: 12,
+    borderRadius: isSmallPhone ? 11 : 12,
 
     backgroundColor: "#EAF4EF",
 
@@ -500,9 +512,9 @@ const styles = StyleSheet.create({
   },
 
   profileCard: {
-    marginTop: 17,
+    marginTop: isSmallPhone ? 13 : 17,
 
-    padding: 12,
+    padding: isSmallPhone ? 10 : 12,
 
     borderRadius: 17,
 
@@ -516,10 +528,10 @@ const styles = StyleSheet.create({
   },
 
   avatar: {
-    width: 46,
-    height: 46,
+    width: isSmallPhone ? 41 : 46,
+    height: isSmallPhone ? 41 : 46,
 
-    borderRadius: 23,
+    borderRadius: isSmallPhone ? 21 : 23,
 
     backgroundColor: "#123E32",
 
@@ -533,21 +545,21 @@ const styles = StyleSheet.create({
   avatarText: {
     color: "#FFFFFF",
 
-    fontSize: 17,
+    fontSize: fontSize(isSmallPhone ? 15 : 17),
     fontWeight: "900",
   },
 
   profileInfo: {
     flex: 1,
 
-    marginLeft: 11,
+    marginLeft: isSmallPhone ? 9 : 11,
     marginRight: 6,
   },
 
   therapistName: {
     color: "#20342D",
 
-    fontSize: 13,
+    fontSize: fontSize(isSmallPhone ? 11 : 13),
     fontWeight: "800",
   },
 
@@ -556,7 +568,7 @@ const styles = StyleSheet.create({
 
     color: "#718078",
 
-    fontSize: 10,
+    fontSize: fontSize(isSmallPhone ? 9 : 10),
     fontWeight: "500",
   },
 
@@ -565,9 +577,9 @@ const styles = StyleSheet.create({
   },
 
   menuContent: {
-    paddingHorizontal: 14,
+    paddingHorizontal: isSmallPhone ? 10 : 14,
     paddingTop: 7,
-    paddingBottom: 20,
+    paddingBottom: isSmallPhone ? 14 : 20,
   },
 
   menuSection: {
@@ -580,18 +592,18 @@ const styles = StyleSheet.create({
 
     color: "#B8923B",
 
-    fontSize: 9,
+    fontSize: fontSize(isSmallPhone ? 8 : 9),
     fontWeight: "900",
 
     letterSpacing: 1.2,
   },
 
   menuItem: {
-    minHeight: 52,
+    minHeight: isSmallPhone ? 48 : 52,
 
     marginBottom: 5,
 
-    paddingHorizontal: 9,
+    paddingHorizontal: isSmallPhone ? 7 : 9,
 
     borderRadius: 14,
 
@@ -604,8 +616,8 @@ const styles = StyleSheet.create({
   },
 
   menuIconBox: {
-    width: 36,
-    height: 36,
+    width: isSmallPhone ? 33 : 36,
+    height: isSmallPhone ? 33 : 36,
 
     borderRadius: 11,
 
@@ -622,11 +634,11 @@ const styles = StyleSheet.create({
   menuLabel: {
     flex: 1,
 
-    marginLeft: 11,
+    marginLeft: isSmallPhone ? 9 : 11,
 
     color: "#31483F",
 
-    fontSize: 12,
+    fontSize: fontSize(isSmallPhone ? 10 : 12),
     fontWeight: "700",
   },
 
@@ -646,9 +658,9 @@ const styles = StyleSheet.create({
   },
 
   footer: {
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 18,
+    paddingHorizontal: isSmallPhone ? 10 : 14,
+    paddingTop: 10,
+    paddingBottom: isSmallPhone ? 12 : 18,
 
     backgroundColor: "#FFFFFF",
 
@@ -657,7 +669,7 @@ const styles = StyleSheet.create({
   },
 
   logoutButton: {
-    minHeight: 50,
+    minHeight: isSmallPhone ? 46 : 50,
 
     borderRadius: 14,
 
@@ -673,8 +685,8 @@ const styles = StyleSheet.create({
   },
 
   logoutIconContainer: {
-    width: 34,
-    height: 34,
+    width: isSmallPhone ? 31 : 34,
+    height: isSmallPhone ? 31 : 34,
 
     borderRadius: 10,
 
@@ -685,11 +697,11 @@ const styles = StyleSheet.create({
   },
 
   logoutText: {
-    marginLeft: 11,
+    marginLeft: isSmallPhone ? 9 : 11,
 
     color: "#A63F3F",
 
-    fontSize: 12,
+    fontSize: fontSize(isSmallPhone ? 10 : 12),
     fontWeight: "800",
   },
 
@@ -698,7 +710,7 @@ const styles = StyleSheet.create({
 
     color: "#8B9891",
 
-    fontSize: 9,
+    fontSize: fontSize(isSmallPhone ? 8 : 9),
     fontWeight: "600",
 
     textAlign: "center",

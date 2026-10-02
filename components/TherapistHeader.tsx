@@ -5,11 +5,17 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import {
+  fontSize,
+  horizontalPadding,
+  isSmallPhone,
+} from "../utils/responsive";
 
 type TherapistHeaderProps = {
   title: string;
@@ -28,6 +34,11 @@ export default function TherapistHeader({
   onRefresh,
   refreshing = false,
 }: TherapistHeaderProps) {
+  const { width } = useWindowDimensions();
+
+  const compact = width < 360;
+  const veryCompact = width < 330;
+
   const getInitial = () => {
     const name = therapistName?.trim();
 
@@ -54,26 +65,48 @@ export default function TherapistHeader({
           ACTUAL HEADER
       ========================================== */}
 
-      <View style={styles.header}>
+      <View
+        style={[
+          styles.header,
+          {
+            minHeight: compact ? 58 : 64,
+            paddingHorizontal: compact ? 10 : horizontalPadding,
+          },
+        ]}
+      >
         {/* MENU */}
 
         <TouchableOpacity
-          style={styles.menuButton}
+          style={[
+            styles.menuButton,
+            compact && styles.compactActionButton,
+          ]}
           onPress={onMenuPress}
           activeOpacity={0.75}
         >
           <Ionicons
             name="menu-outline"
-            size={26}
+            size={compact ? 23 : 26}
             color="#123E32"
           />
         </TouchableOpacity>
 
         {/* PAGE TITLE */}
 
-        <View style={styles.titleContainer}>
+        <View
+          style={[
+            styles.titleContainer,
+            {
+              marginLeft: compact ? 8 : 12,
+              marginRight: compact ? 5 : 8,
+            },
+          ]}
+        >
           <Text
-            style={styles.title}
+            style={[
+              styles.title,
+              compact && styles.titleCompact,
+            ]}
             numberOfLines={1}
             ellipsizeMode="tail"
           >
@@ -82,7 +115,10 @@ export default function TherapistHeader({
 
           {subtitle ? (
             <Text
-              style={styles.subtitle}
+              style={[
+                styles.subtitle,
+                compact && styles.subtitleCompact,
+              ]}
               numberOfLines={1}
               ellipsizeMode="tail"
             >
@@ -96,14 +132,17 @@ export default function TherapistHeader({
         <View style={styles.rightActions}>
           {onRefresh ? (
             <TouchableOpacity
-              style={styles.refreshButton}
+              style={[
+                styles.refreshButton,
+                compact && styles.compactActionButton,
+              ]}
               onPress={onRefresh}
               disabled={refreshing}
               activeOpacity={0.75}
             >
               <Ionicons
                 name="refresh-outline"
-                size={21}
+                size={compact ? 19 : 21}
                 color={
                   refreshing
                     ? "#AAB5AF"
@@ -116,11 +155,19 @@ export default function TherapistHeader({
           {/* PROFILE */}
 
           <TouchableOpacity
-            style={styles.profileButton}
+            style={[
+              styles.profileButton,
+              compact && styles.compactProfileButton,
+            ]}
             onPress={openProfile}
             activeOpacity={0.8}
           >
-            <Text style={styles.profileInitial}>
+            <Text
+              style={[
+                styles.profileInitial,
+                compact && styles.profileInitialCompact,
+              ]}
+            >
               {getInitial()}
             </Text>
           </TouchableOpacity>
@@ -180,12 +227,8 @@ const styles = StyleSheet.create({
   ========================================== */
 
   header: {
-    height: 64,
-
     flexDirection: "row",
     alignItems: "center",
-
-    paddingHorizontal: 14,
 
     backgroundColor: "#FFFFFF",
   },
@@ -224,8 +267,8 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: fontSize(16),
+    lineHeight: fontSize(20),
 
     fontWeight: "800",
 
@@ -237,8 +280,8 @@ const styles = StyleSheet.create({
   subtitle: {
     marginTop: 2,
 
-    fontSize: 9,
-    lineHeight: 13,
+    fontSize: fontSize(9),
+    lineHeight: fontSize(13),
 
     fontWeight: "500",
 
@@ -255,7 +298,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
 
-    gap: 7,
+    gap: isSmallPhone ? 5 : 7,
 
     flexShrink: 0,
   },
@@ -298,11 +341,38 @@ const styles = StyleSheet.create({
   profileInitial: {
     color: "#FFFFFF",
 
-    fontSize: 15,
-    lineHeight: 18,
+    fontSize: fontSize(15),
+    lineHeight: fontSize(18),
 
     fontWeight: "900",
 
     includeFontPadding: false,
+  },
+
+  compactActionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+  },
+
+  compactProfileButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+
+  titleCompact: {
+    fontSize: fontSize(14),
+    lineHeight: fontSize(18),
+  },
+
+  subtitleCompact: {
+    fontSize: fontSize(8),
+    lineHeight: fontSize(11),
+  },
+
+  profileInitialCompact: {
+    fontSize: fontSize(13),
+    lineHeight: fontSize(16),
   },
 });

@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -33,6 +34,15 @@ export default function DoctorHeader({
   showDashboardButton = true,
 }: DoctorHeaderProps) {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+
+  const verySmall = width <= 340;
+  const small = width < 375;
+
+  const sideButtonSize = verySmall ? 38 : small ? 42 : 48;
+  const sideButtonRadius = verySmall ? 12 : small ? 14 : 16;
+  const avatarSize = verySmall ? 38 : small ? 42 : 46;
+  const headerGap = verySmall ? 6 : small ? 8 : 10;
 
   const [doctorName, setDoctorName] = useState("Doctor");
   const [specialization, setSpecialization] = useState("");
@@ -154,12 +164,23 @@ export default function DoctorHeader({
       style={[
         styles.header,
         {
-          paddingTop: Math.max(insets.top, 8) + 5,
+          paddingTop: Math.max(insets.top, 8) + (small ? 3 : 5),
+          minHeight: small ? 72 : 80,
+          paddingHorizontal: verySmall ? 8 : small ? 10 : 14,
+          paddingBottom: small ? 8 : 11,
+          gap: headerGap,
         },
       ]}
     >
       <TouchableOpacity
-        style={styles.menuButton}
+        style={[
+          styles.menuButton,
+          {
+            width: sideButtonSize,
+            height: sideButtonSize,
+            borderRadius: sideButtonRadius,
+          },
+        ]}
         onPress={onMenuPress}
         activeOpacity={0.82}
         accessibilityRole="button"
@@ -167,7 +188,7 @@ export default function DoctorHeader({
       >
         <Ionicons
           name="menu-outline"
-          size={28}
+          size={verySmall ? 23 : small ? 25 : 28}
           color={GREEN}
         />
       </TouchableOpacity>
@@ -180,7 +201,13 @@ export default function DoctorHeader({
         <Text
           numberOfLines={1}
           ellipsizeMode="tail"
-          style={styles.title}
+          style={[
+            styles.title,
+            {
+              fontSize: verySmall ? 14 : small ? 16 : 18,
+              lineHeight: verySmall ? 18 : small ? 20 : 22,
+            },
+          ]}
         >
           {title}
         </Text>
@@ -189,7 +216,10 @@ export default function DoctorHeader({
           <Text
             numberOfLines={1}
             ellipsizeMode="tail"
-            style={styles.specialization}
+            style={[
+              styles.specialization,
+              { fontSize: verySmall ? 8.5 : small ? 9 : 10 },
+            ]}
           >
             {specialization}
           </Text>
@@ -198,7 +228,14 @@ export default function DoctorHeader({
 
       {showDashboardButton && (
         <TouchableOpacity
-          style={styles.dashboardButton}
+          style={[
+            styles.dashboardButton,
+            {
+              width: verySmall ? 36 : small ? 40 : 45,
+              height: verySmall ? 36 : small ? 40 : 45,
+              borderRadius: verySmall ? 12 : 15,
+            },
+          ]}
           onPress={() =>
             router.replace("/doctor/dashboard" as any)
           }
@@ -208,14 +245,17 @@ export default function DoctorHeader({
         >
           <Ionicons
             name="grid-outline"
-            size={22}
+            size={verySmall ? 18 : small ? 20 : 22}
             color={GREEN}
           />
         </TouchableOpacity>
       )}
 
       <TouchableOpacity
-        style={styles.profileButton}
+        style={[
+          styles.profileButton,
+          { width: sideButtonSize, height: sideButtonSize },
+        ]}
         onPress={() =>
           router.push("/doctor/profile" as any)
         }
@@ -223,7 +263,16 @@ export default function DoctorHeader({
         accessibilityRole="button"
         accessibilityLabel="Open doctor profile"
       >
-        <View style={styles.avatar}>
+        <View
+          style={[
+            styles.avatar,
+            {
+              width: avatarSize,
+              height: avatarSize,
+              borderRadius: verySmall ? 12 : small ? 14 : 15,
+            },
+          ]}
+        >
           {profileImage ? (
             <Image
               source={{ uri: profileImage }}
@@ -244,7 +293,12 @@ export default function DoctorHeader({
               }}
             />
           ) : (
-            <Text style={styles.avatarText}>
+            <Text
+              style={[
+                styles.avatarText,
+                { fontSize: verySmall ? 15 : small ? 16 : 18 },
+              ]}
+            >
               {initial}
             </Text>
           )}

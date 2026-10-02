@@ -48,6 +48,34 @@ const DANGER = "#B95045";
 const SUCCESS = "#287146";
 const INFO = "#356C8C";
 
+const BEAUTY_SERVICES = [
+  "Radiant Facial",
+  "Dark Spot Treatment",
+  "Smooth & Silky Acne Treatment",
+  "Neolife Signature Facial",
+  "AHA Facial",
+  "Skin Brightening Facial",
+  "Illuminating Facial",
+  "Ombre Eyebrows",
+  "Combination Eyebrows",
+  "Eyebrow Reconstruction",
+  "Dark Lip Correction",
+  "Lip Brightening Therapy",
+];
+
+function isBeautyDoctor(doctor: Doctor | null) {
+  const specialization = String(doctor?.specialization || "")
+    .trim()
+    .toLowerCase();
+
+  return (
+    specialization.includes("beauty") ||
+    specialization.includes("cosmetic") ||
+    specialization.includes("esthetic") ||
+    specialization.includes("aesthetic")
+  );
+}
+
 type NoticeType = "success" | "error" | "info";
 
 type NoticeState = {
@@ -107,6 +135,7 @@ type PatientForm = {
   phoneNumber: string;
   symptoms: string;
   pastMedicalHistory: string;
+  treatment: string;
 };
 
 const EMPTY_PATIENT: PatientForm = {
@@ -116,6 +145,7 @@ const EMPTY_PATIENT: PatientForm = {
   phoneNumber: "",
   symptoms: "",
   pastMedicalHistory: "",
+  treatment: "",
 };
 
 export default function BookAppointmentScreen() {
@@ -134,6 +164,8 @@ export default function BookAppointmentScreen() {
 
   const [patient, setPatient] = useState<PatientForm>(EMPTY_PATIENT);
   const [paying, setPaying] = useState(false);
+  const [treatmentCategory, setTreatmentCategory] = useState("");
+  const [beautyServiceOpen, setBeautyServiceOpen] = useState(false);
 
   const [pendingAppointment, setPendingAppointment] = useState<PendingAppointment | null>(null);
   const [verifyingPayment, setVerifyingPayment] = useState(false);
@@ -330,6 +362,11 @@ export default function BookAppointmentScreen() {
 
   function selectDoctor(doctor: Doctor) {
     setSelectedDoctor(doctor);
+
+    if (!isBeautyDoctor(doctor)) {
+      setTreatmentCategory("");
+      setPatient((current) => ({ ...current, treatment: "" }));
+    }
     setAppointmentDate("");
     setSlots([]);
     setSelectedSlot(null);
@@ -620,6 +657,7 @@ export default function BookAppointmentScreen() {
         gender: patient.gender,
         symptoms: patient.symptoms.trim(),
         pastMedicalHistory: patient.pastMedicalHistory.trim(),
+        treatment: isBeautyDoctor(selectedDoctor) ? patient.treatment : "",
       };
 
       const appointmentResult = await apiRequest(
@@ -1045,6 +1083,15 @@ try {
               <PatientStep
                 patient={patient}
                 onUpdate={updatePatient}
+                showBeautyCosmetics={isBeautyDoctor(selectedDoctor)}
+                treatmentCategory={treatmentCategory}
+                onToggleBeauty={(selected) => {
+                  setTreatmentCategory(selected ? "beauty" : "");
+                  if (!selected) updatePatient("treatment", "");
+                }}
+                beautyServiceOpen={beautyServiceOpen}
+                onOpenBeautyService={() => setBeautyServiceOpen(true)}
+                onCloseBeautyService={() => setBeautyServiceOpen(false)}
               />
             )}
 
@@ -1055,6 +1102,7 @@ try {
                 startTime={selectedStartTime}
                 endTime={selectedEndTime}
                 patient={patient}
+                showBeautyCosmetics={isBeautyDoctor(selectedDoctor)}
               />
             )}
           </View>
@@ -1598,12 +1646,21 @@ function ScheduleStep({
 function PatientStep({
   patient,
   onUpdate,
+  showBeautyCosmetics,
+  treatmentCategory,
+  onToggleBeauty,
+  beautyServiceOpen,
+  onOpenBeautyService,
+  onCloseBeautyService,
 }: {
   patient: PatientForm;
-  onUpdate: <K extends keyof PatientForm>(
-    key: K,
-    value: PatientForm[K]
-  ) => void;
+  onUpdate: <K extends keyof PatientForm>(key: K, value: PatientForm[K]) => void;
+  showBeautyCosmetics: boolean;
+  treatmentCategory: string;
+  onToggleBeauty: (selected: boolean) => void;
+  beautyServiceOpen: boolean;
+  onOpenBeautyService: () => void;
+  onCloseBeautyService: () => void;
 }) {
   return (
     <View>
@@ -1700,6 +1757,76 @@ function PatientStep({
         />
       </View>
 
+      {showBeautyCosmetics && (
+        <View style={styles.beautySection}>
+          <Text style={styles.fieldLabel}>BEAUTY & COSMETICS · OPTIONAL</Text>
+          <Text style={styles.beautyHelp}>
+            Select this only if you want to book a Beauty & Cosmetics service.
+          </Text>
+
+          <TouchableOpacity
+            activeOpacity={0.86}
+            style={[
+              styles.beautyToggle,
+              treatmentCategory === "beauty" && styles.beautyToggleActive,
+            ]}
+            onPress={() => onToggleBeauty(treatmentCategory !== "beauty")}
+          >
+            <Ionicons
+              name={treatmentCategory === "beauty" ? "checkbox" : "square-outline"}
+              size={23}
+              color={treatmentCategory === "beauty" ? GREEN : MUTED}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.beautyToggleTitle}>Beauty & Cosmetics</Text>
+              <Text style={styles.beautyToggleText}>Facial, eyebrow and lip treatments</Text>
+            </View>
+          </TouchableOpacity>
+
+          {treatmentCategory === "beauty" && (
+            <>
+              <Text style={styles.fieldLabel}>SELECT SERVICE</Text>
+              <TouchableOpacity style={styles.selectField} onPress={onOpenBeautyService}>
+                <Text style={patient.treatment ? styles.selectValue : styles.selectPlaceholder}>
+                  {patient.treatment || "Select a service"}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color={GREEN} />
+              </TouchableOpacity>
+            </>
+          )}
+
+          <Modal visible={beautyServiceOpen} transparent animationType="slide" onRequestClose={onCloseBeautyService}>
+            <Pressable style={styles.beautyModalOverlay} onPress={onCloseBeautyService}>
+              <Pressable style={styles.beautyModalCard} onPress={() => {}}>
+                <View style={styles.beautyModalHeader}>
+                  <Text style={styles.beautyModalTitle}>Select Beauty Service</Text>
+                  <TouchableOpacity onPress={onCloseBeautyService}>
+                    <Ionicons name="close" size={24} color={TEXT} />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  {BEAUTY_SERVICES.map((service) => (
+                    <TouchableOpacity
+                      key={service}
+                      style={[styles.beautyOption, patient.treatment === service && styles.beautyOptionActive]}
+                      onPress={() => {
+                        onUpdate("treatment", service);
+                        onCloseBeautyService();
+                      }}
+                    >
+                      <Text style={[styles.beautyOptionText, patient.treatment === service && styles.beautyOptionTextActive]}>
+                        {service}
+                      </Text>
+                      {patient.treatment === service && <Ionicons name="checkmark-circle" size={20} color={GREEN} />}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </Pressable>
+            </Pressable>
+          </Modal>
+        </View>
+      )}
+
       <Text style={styles.fieldLabel}>PAST MEDICAL HISTORY · OPTIONAL</Text>
 
       <View style={styles.textAreaWrap}>
@@ -1725,12 +1852,14 @@ function ReviewStep({
   startTime,
   endTime,
   patient,
+  showBeautyCosmetics,
 }: {
   doctor: Doctor | null;
   date: string;
   startTime: string;
   endTime: string;
   patient: PatientForm;
+  showBeautyCosmetics: boolean;
 }) {
   return (
     <View>
@@ -1777,6 +1906,9 @@ function ReviewStep({
         <ReviewRow label="Phone" value={patient.phoneNumber} />
         <ReviewRow label="Age" value={patient.age} />
         <ReviewRow label="Gender" value={patient.gender} />
+        {showBeautyCosmetics && !!patient.treatment && (
+          <ReviewRow label="Beauty & Cosmetics Service" value={patient.treatment} />
+        )}
       </View>
 
       <View style={styles.reviewSection}>
@@ -2663,6 +2795,46 @@ const styles = StyleSheet.create({
     color: WHITE,
   },
 
+  beautySection: {
+    marginTop: 8,
+    marginBottom: 18,
+  },
+  beautyHelp: {
+    fontFamily: "DMSans_400Regular",
+    fontSize: 13,
+    color: MUTED,
+    lineHeight: 19,
+    marginBottom: 10,
+  },
+  beautyToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    padding: 14,
+    backgroundColor: WHITE,
+    marginBottom: 14,
+  },
+  beautyToggleActive: { borderColor: GREEN, backgroundColor: MINT },
+  beautyToggleTitle: { fontFamily: "DMSans_700Bold", fontSize: 15, color: TEXT },
+  beautyToggleText: { fontFamily: "DMSans_400Regular", fontSize: 12, color: MUTED, marginTop: 2 },
+  selectField: {
+    minHeight: 52, borderWidth: 1, borderColor: BORDER, borderRadius: 14,
+    paddingHorizontal: 15, flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between", backgroundColor: WHITE, marginBottom: 8,
+  },
+  selectValue: { flex: 1, fontFamily: "DMSans_500Medium", fontSize: 14, color: TEXT },
+  selectPlaceholder: { flex: 1, fontFamily: "DMSans_400Regular", fontSize: 14, color: "#9AA59E" },
+  beautyModalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  beautyModalCard: { backgroundColor: WHITE, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: "75%" },
+  beautyModalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  beautyModalTitle: { fontFamily: "DMSans_700Bold", fontSize: 19, color: TEXT },
+  beautyOption: { minHeight: 50, paddingVertical: 13, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: BORDER, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  beautyOptionActive: { backgroundColor: MINT },
+  beautyOptionText: { flex: 1, fontFamily: "DMSans_500Medium", fontSize: 14, color: TEXT },
+  beautyOptionTextActive: { color: GREEN, fontFamily: "DMSans_700Bold" },
   textAreaWrap: {
     marginBottom: 15,
     minHeight: 100,

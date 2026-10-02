@@ -18,6 +18,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -63,6 +64,12 @@ const MENU_ITEMS: MenuItem[] = [
     label: "Patients",
     route: "/doctor/patients",
   },
+  {
+  section: "MAIN",
+  icon: "walk-outline",
+  label: "Walk-in Patients",
+  route: "/doctor/walk-in-patients",
+},
   {
     section: "MAIN",
     icon: "calendar-outline",
@@ -119,6 +126,21 @@ export default function DoctorDrawer({
 }: DoctorDrawerProps) {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+
+  const verySmall = width <= 340;
+  const small = width < 375;
+  const shortScreen = height < 700;
+  const veryShortScreen = height < 620;
+
+  const drawerWidth = Math.min(
+    width * (verySmall ? 0.92 : small ? 0.89 : 0.86),
+    370
+  );
+
+  const horizontalPadding = verySmall ? 10 : small ? 12 : 16;
+  const menuHeight = veryShortScreen ? 44 : shortScreen ? 47 : 52;
+  const menuIconSize = verySmall ? 33 : small ? 36 : 39;
 
   const [doctorName, setDoctorName] =
     useState("Doctor");
@@ -424,17 +446,19 @@ export default function DoctorDrawer({
             style={[
               styles.drawer,
               {
+                width: drawerWidth,
+                paddingHorizontal: horizontalPadding,
                 paddingTop:
                   Math.max(
                     insets.top,
                     8
-                  ) + 8,
+                  ) + (shortScreen ? 4 : 8),
 
                 paddingBottom:
                   Math.max(
                     insets.bottom,
                     8
-                  ) + 4,
+                  ) + (shortScreen ? 2 : 4),
               },
             ]}
           >
@@ -442,10 +466,26 @@ export default function DoctorDrawer({
                 BRAND HEADER
             ============================== */}
 
-            <View style={styles.brandRow}>
+            <View
+              style={[
+                styles.brandRow,
+                {
+                  minHeight: verySmall ? 52 : small ? 56 : 62,
+                  gap: verySmall ? 7 : small ? 9 : 11,
+                  marginBottom: shortScreen ? 9 : 14,
+                },
+              ]}
+            >
               <Image
                 source={require("../assets/images/main_logo.jpeg")}
-                style={styles.logo}
+                style={[
+                  styles.logo,
+                  {
+                    width: verySmall ? 42 : small ? 47 : 52,
+                    height: verySmall ? 42 : small ? 47 : 52,
+                    borderRadius: verySmall ? 12 : 15,
+                  },
+                ]}
                 resizeMode="cover"
               />
 
@@ -455,7 +495,13 @@ export default function DoctorDrawer({
                 }
               >
                 <Text
-                  style={styles.brand}
+                  style={[
+                    styles.brand,
+                    {
+                      fontSize: verySmall ? 19 : small ? 21 : 23,
+                      lineHeight: verySmall ? 23 : small ? 25 : 27,
+                    },
+                  ]}
                 >
                   NeoLife
                 </Text>
@@ -469,14 +515,21 @@ export default function DoctorDrawer({
 
               <TouchableOpacity
                 style={
-                  styles.closeButton
+                  [
+                    styles.closeButton,
+                    {
+                      width: verySmall ? 38 : small ? 42 : 46,
+                      height: verySmall ? 38 : small ? 42 : 46,
+                      borderRadius: verySmall ? 12 : 15,
+                    },
+                  ]
                 }
                 activeOpacity={0.8}
                 onPress={onClose}
               >
                 <Ionicons
                   name="close"
-                  size={27}
+                  size={verySmall ? 23 : small ? 25 : 27}
                   color={GREEN}
                 />
               </TouchableOpacity>
@@ -487,7 +540,14 @@ export default function DoctorDrawer({
             ============================== */}
 
             <TouchableOpacity
-              style={styles.doctorCard}
+              style={[
+                styles.doctorCard,
+                {
+                  minHeight: verySmall ? 78 : small ? 84 : 92,
+                  padding: verySmall ? 10 : small ? 11 : 13,
+                  gap: verySmall ? 8 : small ? 10 : 12,
+                },
+              ]}
               activeOpacity={0.85}
               onPress={() =>
                 openRoute(
@@ -496,7 +556,14 @@ export default function DoctorDrawer({
               }
             >
               <View
-                style={styles.avatar}
+                style={[
+                  styles.avatar,
+                  {
+                    width: verySmall ? 48 : small ? 53 : 58,
+                    height: verySmall ? 48 : small ? 53 : 58,
+                    borderRadius: verySmall ? 15 : 18,
+                  },
+                ]}
               >
                 {profileImage ? (
                   <Image
@@ -543,7 +610,10 @@ export default function DoctorDrawer({
                 <Text
                   numberOfLines={1}
                   style={
-                    styles.doctorName
+                    [
+                      styles.doctorName,
+                      { fontSize: verySmall ? 12.5 : small ? 13 : 14 },
+                    ]
                   }
                 >
                   {doctorName}
@@ -552,7 +622,10 @@ export default function DoctorDrawer({
                 <Text
                   numberOfLines={1}
                   style={
-                    styles.doctorRole
+                    [
+                      styles.doctorRole,
+                      { fontSize: verySmall ? 9.5 : small ? 10 : 11 },
+                    ]
                   }
                 >
                   {specialization ||
@@ -583,9 +656,13 @@ export default function DoctorDrawer({
                 showsVerticalScrollIndicator={
                   false
                 }
-                contentContainerStyle={
-                  styles.menuContent
-                }
+                contentContainerStyle={[
+                  styles.menuContent,
+                  {
+                    paddingTop: shortScreen ? 3 : 7,
+                    paddingBottom: shortScreen ? 10 : 18,
+                  },
+                ]}
                 keyboardShouldPersistTaps="handled"
               >
                 {(
@@ -641,6 +718,11 @@ export default function DoctorDrawer({
                                 }
                                 style={[
                                   styles.menuItem,
+                                  {
+                                    minHeight: menuHeight,
+                                    paddingHorizontal: verySmall ? 6 : 9,
+                                    gap: verySmall ? 8 : small ? 9 : 11,
+                                  },
 
                                   active &&
                                     styles.menuItemActive,
@@ -657,6 +739,11 @@ export default function DoctorDrawer({
                                 <View
                                   style={[
                                     styles.menuIcon,
+                                    {
+                                      width: menuIconSize,
+                                      height: menuIconSize,
+                                      borderRadius: verySmall ? 10 : 12,
+                                    },
 
                                     active &&
                                       styles.menuIconActive,
@@ -667,7 +754,7 @@ export default function DoctorDrawer({
                                       item.icon
                                     }
                                     size={
-                                      21
+                                      verySmall ? 18 : small ? 20 : 21
                                     }
                                     color={
                                       active
@@ -680,6 +767,8 @@ export default function DoctorDrawer({
                                 <Text
                                   style={[
                                     styles.menuText,
+
+                                    { fontSize: verySmall ? 11 : small ? 12 : 12.5 },
 
                                     active &&
                                       styles.menuTextActive,
@@ -696,7 +785,7 @@ export default function DoctorDrawer({
                                 <Ionicons
                                   name="chevron-forward"
                                   size={
-                                    18
+                                    verySmall ? 15 : small ? 17 : 18
                                   }
                                   color={
                                     active
@@ -734,7 +823,10 @@ export default function DoctorDrawer({
             >
               <TouchableOpacity
                 style={
-                  styles.logoutButton
+                  [
+                    styles.logoutButton,
+                    { minHeight: shortScreen ? 48 : 54 },
+                  ]
                 }
                 activeOpacity={0.88}
                 onPress={() =>
@@ -788,9 +880,13 @@ export default function DoctorDrawer({
           />
 
           <View
-            style={
-              styles.confirmCard
-            }
+            style={[
+              styles.confirmCard,
+              {
+                width: Math.min(width - 32, 360),
+                padding: verySmall ? 18 : small ? 21 : 24,
+              },
+            ]}
           >
             <View
               style={
@@ -830,9 +926,7 @@ export default function DoctorDrawer({
             </Text>
 
             <View
-              style={
-                styles.confirmActions
-              }
+              style={styles.confirmActions}
             >
               <TouchableOpacity
                 style={

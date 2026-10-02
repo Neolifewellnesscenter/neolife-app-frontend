@@ -15,7 +15,11 @@ import {
 } from "@expo-google-fonts/playfair-display";
 
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+
+import React, {
+  useEffect,
+  useState,
+} from "react";
 
 import {
   Modal,
@@ -25,6 +29,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -33,14 +38,10 @@ import {
 ========================================================= */
 
 const GREEN = "#0B3D2E";
-const GREEN_SOFT = "#0B5B46";
-
 const GOLD = "#D7B65B";
 const GOLD_LIGHT = "#F3E4B5";
-
 const WHITE = "#FFFFFF";
 const MUTED = "#B9CBC3";
-
 const DANGER = "#E1746B";
 
 /* =========================================================
@@ -69,41 +70,56 @@ const MENU_ITEMS: MenuItem[] = [
     label: "Home",
     route: "/(tabs)",
   },
+
   {
     icon: "leaf-outline",
     label: "Therapies",
     route: "/therapies",
   },
+
   {
     icon: "sparkles-outline",
     label: "Beauty & Cosmetics",
     route: "/beauty-cosmetics",
   },
+
   {
     icon: "medical-outline",
     label: "Doctors",
     route: "/doctors",
   },
+
   {
     icon: "bag-outline",
     label: "Products",
     route: "/(tabs)/products",
   },
+
+  {
+    icon: "pricetag-outline",
+    label: "Offers",
+    route: "/offers",
+  },
+
   {
     icon: "calendar-outline",
     label: "Consultation",
     route: "/consultation",
   },
+
   {
     icon: "newspaper-outline",
     label: "Blogs",
     route: "/blogs",
   },
+
   {
-    icon: "information-circle-outline",
+    icon:
+      "information-circle-outline",
     label: "About",
     route: "/about",
   },
+
   {
     icon: "call-outline",
     label: "Contact",
@@ -120,7 +136,92 @@ export default function PatientDrawer({
   onClose,
   activeRoute,
 }: PatientDrawerProps) {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] =
+    useState(false);
+
+  const { width, height } =
+    useWindowDimensions();
+
+  /* =======================================================
+     RESPONSIVE BREAKPOINTS
+  ======================================================= */
+
+  const isVerySmallPhone =
+    width <= 340;
+
+  const isSmallPhone =
+    width > 340 && width < 375;
+
+  const isLargePhone =
+    width >= 430;
+
+  const isShortPhone =
+    height < 700;
+
+  const isVeryShortPhone =
+    height < 620;
+
+  /* =======================================================
+     RESPONSIVE VALUES
+  ======================================================= */
+
+  const drawerWidth = Math.min(
+    width *
+      (isVerySmallPhone
+        ? 0.9
+        : isSmallPhone
+          ? 0.86
+          : 0.82),
+    isLargePhone ? 350 : 340
+  );
+
+  const drawerHorizontalPadding =
+    isVerySmallPhone
+      ? 11
+      : isSmallPhone
+        ? 14
+        : 17;
+
+  const drawerTopPadding =
+    Platform.OS === "web"
+      ? 30
+      : isVeryShortPhone
+        ? 40
+        : isShortPhone
+          ? 48
+          : 64;
+
+  const drawerBottomPadding =
+    isVeryShortPhone
+      ? 14
+      : isShortPhone
+        ? 18
+        : 26;
+
+  const itemHeight =
+    isVeryShortPhone
+      ? 44
+      : isShortPhone
+        ? 47
+        : 52;
+
+  const iconSize =
+    isVerySmallPhone
+      ? 32
+      : isShortPhone
+        ? 34
+        : 36;
+
+  const menuFontSize =
+    isVerySmallPhone
+      ? 12
+      : isSmallPhone
+        ? 12.5
+        : 13.5;
+
+  /* =======================================================
+     FONTS
+  ======================================================= */
 
   const [dmLoaded] = useDMSans({
     DMSans_400Regular,
@@ -129,9 +230,10 @@ export default function PatientDrawer({
     DMSans_700Bold,
   });
 
-  const [playfairLoaded] = usePlayfair({
-    PlayfairDisplay_600SemiBold,
-  });
+  const [playfairLoaded] =
+    usePlayfair({
+      PlayfairDisplay_600SemiBold,
+    });
 
   /* =======================================================
      LOGIN STATUS
@@ -145,11 +247,19 @@ export default function PatientDrawer({
 
   async function checkLoginStatus() {
     try {
-      const token = await AsyncStorage.getItem("token");
-      const loggedIn = await AsyncStorage.getItem("isLoggedIn");
+      const token =
+        await AsyncStorage.getItem(
+          "token"
+        );
+
+      const loggedIn =
+        await AsyncStorage.getItem(
+          "isLoggedIn"
+        );
 
       setIsLoggedIn(
-        Boolean(token) && loggedIn === "true"
+        Boolean(token) &&
+          loggedIn === "true"
       );
     } catch (error) {
       console.log(
@@ -183,9 +293,14 @@ export default function PatientDrawer({
 
       onClose();
 
-      router.replace("/login" as any);
+      router.replace(
+        "/login" as any
+      );
     } catch (error) {
-      console.log("Logout failed:", error);
+      console.log(
+        "Logout failed:",
+        error
+      );
     }
   }
 
@@ -193,7 +308,9 @@ export default function PatientDrawer({
      NAVIGATION
   ======================================================= */
 
-  function handleNavigate(route: string) {
+  function handleNavigate(
+    route: string
+  ) {
     onClose();
 
     setTimeout(() => {
@@ -201,11 +318,20 @@ export default function PatientDrawer({
     }, 100);
   }
 
-  function isActive(route: string) {
+  function isActive(
+    route: string
+  ) {
     return activeRoute === route;
   }
 
-  if (!dmLoaded || !playfairLoaded) {
+  /* =======================================================
+     FONT LOADING
+  ======================================================= */
+
+  if (
+    !dmLoaded ||
+    !playfairLoaded
+  ) {
     return null;
   }
 
@@ -222,175 +348,419 @@ export default function PatientDrawer({
       onRequestClose={onClose}
     >
       <View style={styles.modalRoot}>
-        {/* BACKDROP */}
+        {/* ================= BACKDROP ================= */}
 
         <Pressable
           style={styles.backdrop}
           onPress={onClose}
         />
 
-        {/* DRAWER */}
+        {/* ================= DRAWER ================= */}
 
-        <View style={styles.drawer}>
+        <View
+          style={[
+            styles.drawer,
+            {
+              width: drawerWidth,
+            },
+          ]}
+        >
           <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={
-              styles.drawerScroll
+            showsVerticalScrollIndicator={
+              false
             }
-          >
-            {/* ===========================================
-                BRAND HEADER
-            =========================================== */}
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[
+              styles.drawerScroll,
+              {
+                paddingTop:
+                  drawerTopPadding,
 
-            <View style={styles.drawerHeader}>
-              <View style={styles.brandWrap}>
-                <Text style={styles.drawerBrand}>
+                paddingHorizontal:
+                  drawerHorizontalPadding,
+
+                paddingBottom:
+                  drawerBottomPadding,
+              },
+            ]}
+          >
+            {/* =========================================
+                BRAND HEADER
+            ========================================= */}
+
+            <View
+              style={[
+                styles.drawerHeader,
+                {
+                  marginBottom:
+                    isShortPhone
+                      ? 14
+                      : 20,
+                },
+              ]}
+            >
+              <View
+                style={
+                  styles.brandWrap
+                }
+              >
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                  style={[
+                    styles.drawerBrand,
+                    {
+                      fontSize:
+                        isVerySmallPhone
+                          ? 23
+                          : isSmallPhone
+                            ? 25
+                            : 27,
+
+                      lineHeight:
+                        isVerySmallPhone
+                          ? 28
+                          : isSmallPhone
+                            ? 30
+                            : 32,
+                    },
+                  ]}
+                >
                   NeoLife
                 </Text>
 
-                <Text style={styles.drawerSub}>
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                  style={[
+                    styles.drawerSub,
+                    {
+                      fontSize:
+                        isVerySmallPhone
+                          ? 9
+                          : 10.5,
+                    },
+                  ]}
+                >
                   Wellness Center
                 </Text>
               </View>
 
+              {/* CLOSE */}
+
               <TouchableOpacity
                 activeOpacity={0.85}
-                style={styles.closeButton}
+                style={[
+                  styles.closeButton,
+                  {
+                    width:
+                      isVerySmallPhone
+                        ? 35
+                        : 39,
+
+                    height:
+                      isVerySmallPhone
+                        ? 35
+                        : 39,
+
+                    borderRadius:
+                      isVerySmallPhone
+                        ? 11
+                        : 13,
+                  },
+                ]}
                 onPress={onClose}
               >
                 <Ionicons
                   name="close"
-                  size={22}
+                  size={
+                    isVerySmallPhone
+                      ? 20
+                      : 22
+                  }
                   color={GREEN}
                 />
               </TouchableOpacity>
             </View>
 
-            {/* SMALL LABEL */}
+            {/* ================= EXPLORE ================= */}
 
-            <Text style={styles.menuLabel}>
+            <Text
+              style={[
+                styles.menuLabel,
+                {
+                  marginBottom:
+                    isShortPhone
+                      ? 5
+                      : 7,
+                },
+              ]}
+            >
               EXPLORE
             </Text>
 
-            {/* ===========================================
-                MENU ITEMS
-            =========================================== */}
+            {/* ================= MENU ================= */}
 
-            <View style={styles.menuContainer}>
-              {MENU_ITEMS.map((item) => {
-                const active = isActive(
-                  item.route
-                );
+            <View
+              style={[
+                styles.menuContainer,
+                {
+                  gap:
+                    isVeryShortPhone
+                      ? 1
+                      : 3,
+                },
+              ]}
+            >
+              {MENU_ITEMS.map(
+                (item) => {
+                  const active =
+                    isActive(
+                      item.route
+                    );
 
-                return (
-                  <TouchableOpacity
-                    key={item.label}
-                    activeOpacity={0.82}
-                    style={[
-                      styles.drawerItem,
-                      active &&
-                        styles.drawerItemActive,
-                    ]}
-                    onPress={() =>
-                      handleNavigate(
-                        item.route
-                      )
-                    }
-                  >
-                    {/* ICON */}
-
-                    <View
+                  return (
+                    <TouchableOpacity
+                      key={
+                        item.label
+                      }
+                      activeOpacity={
+                        0.82
+                      }
                       style={[
-                        styles.menuIconWrap,
+                        styles.drawerItem,
+
+                        {
+                          minHeight:
+                            itemHeight,
+
+                          borderRadius:
+                            isVerySmallPhone
+                              ? 13
+                              : 15,
+                        },
+
                         active &&
-                          styles.menuIconWrapActive,
+                          styles.drawerItemActive,
                       ]}
+                      onPress={() =>
+                        handleNavigate(
+                          item.route
+                        )
+                      }
                     >
-                      <Ionicons
-                        name={item.icon}
-                        size={20}
-                        color={
-                          active
-                            ? GREEN
-                            : GOLD
+                      {/* ICON */}
+
+                      <View
+                        style={[
+                          styles.menuIconWrap,
+
+                          {
+                            width:
+                              iconSize,
+
+                            height:
+                              iconSize,
+
+                            borderRadius:
+                              isVerySmallPhone
+                                ? 10
+                                : 11,
+
+                            marginRight:
+                              isVerySmallPhone
+                                ? 6
+                                : 8,
+                          },
+
+                          active &&
+                            styles.menuIconWrapActive,
+                        ]}
+                      >
+                        <Ionicons
+                          name={
+                            item.icon
+                          }
+                          size={
+                            isVerySmallPhone
+                              ? 18
+                              : 20
+                          }
+                          color={
+                            active
+                              ? GREEN
+                              : GOLD
+                          }
+                        />
+                      </View>
+
+                      {/* TEXT */}
+
+                      <Text
+                        numberOfLines={
+                          1
                         }
-                      />
-                    </View>
-
-                    {/* TITLE */}
-
-                    <Text
-                      numberOfLines={1}
-                      style={[
-                        styles.drawerText,
-                        active &&
-                          styles.drawerTextActive,
-                      ]}
-                    >
-                      {item.label}
-                    </Text>
-
-                    {/* ARROW */}
-
-                    <View
-                      style={[
-                        styles.arrowWrap,
-                        active &&
-                          styles.arrowWrapActive,
-                      ]}
-                    >
-                      <Ionicons
-                        name="chevron-forward"
-                        size={15}
-                        color={
-                          active
-                            ? GREEN
-                            : MUTED
+                        adjustsFontSizeToFit
+                        minimumFontScale={
+                          0.8
                         }
-                      />
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
+                        style={[
+                          styles.drawerText,
+
+                          {
+                            fontSize:
+                              menuFontSize,
+
+                            lineHeight:
+                              menuFontSize +
+                              5,
+                          },
+
+                          active &&
+                            styles.drawerTextActive,
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
+
+                      {/* ARROW */}
+
+                      <View
+                        style={[
+                          styles.arrowWrap,
+
+                          active &&
+                            styles.arrowWrapActive,
+                        ]}
+                      >
+                        <Ionicons
+                          name="chevron-forward"
+                          size={
+                            isVerySmallPhone
+                              ? 14
+                              : 15
+                          }
+                          color={
+                            active
+                              ? GREEN
+                              : MUTED
+                          }
+                        />
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }
+              )}
             </View>
 
-            {/* ===========================================
-                ACCOUNT
-            =========================================== */}
+            {/* ================= ACCOUNT ================= */}
 
-            <View style={styles.authDivider} />
+            <View
+              style={[
+                styles.authDivider,
+                {
+                  marginTop:
+                    isShortPhone
+                      ? 11
+                      : 17,
 
-            <Text style={styles.menuLabel}>
+                  marginBottom:
+                    isShortPhone
+                      ? 10
+                      : 14,
+                },
+              ]}
+            />
+
+            <Text
+              style={styles.menuLabel}
+            >
               ACCOUNT
             </Text>
+
+            {/* LOGGED IN */}
 
             {isLoggedIn ? (
               <TouchableOpacity
                 activeOpacity={0.82}
-                style={styles.authDrawerItem}
+                style={[
+                  styles.authDrawerItem,
+                  {
+                    minHeight:
+                      isShortPhone
+                        ? 54
+                        : 61,
+                  },
+                ]}
                 onPress={handleLogout}
               >
                 <View
-                  style={styles.authIconBox}
+                  style={[
+                    styles.authIconBox,
+                    {
+                      width:
+                        isVerySmallPhone
+                          ? 35
+                          : 39,
+
+                      height:
+                        isVerySmallPhone
+                          ? 35
+                          : 39,
+
+                      marginRight:
+                        isVerySmallPhone
+                          ? 7
+                          : 10,
+                    },
+                  ]}
                 >
                   <Ionicons
                     name="log-out-outline"
-                    size={20}
+                    size={
+                      isVerySmallPhone
+                        ? 18
+                        : 20
+                    }
                     color={DANGER}
                   />
                 </View>
 
-                <View style={{ flex: 1 }}>
+                <View
+                  style={
+                    styles.authTextWrap
+                  }
+                >
                   <Text
-                    style={
-                      styles.logoutDrawerText
-                    }
+                    numberOfLines={1}
+                    style={[
+                      styles.logoutDrawerText,
+                      {
+                        fontSize:
+                          isVerySmallPhone
+                            ? 12.5
+                            : 13.5,
+                      },
+                    ]}
                   >
                     Logout
                   </Text>
 
-                  <Text style={styles.authSubtext}>
-                    Sign out of your account
+                  <Text
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={
+                      0.8
+                    }
+                    style={
+                      styles.authSubtext
+                    }
+                  >
+                    Sign out of your
+                    account
                   </Text>
                 </View>
 
@@ -401,9 +771,19 @@ export default function PatientDrawer({
                 />
               </TouchableOpacity>
             ) : (
+              /* NOT LOGGED IN */
+
               <TouchableOpacity
                 activeOpacity={0.82}
-                style={styles.authDrawerItem}
+                style={[
+                  styles.authDrawerItem,
+                  {
+                    minHeight:
+                      isShortPhone
+                        ? 54
+                        : 61,
+                  },
+                ]}
                 onPress={() => {
                   onClose();
 
@@ -415,26 +795,69 @@ export default function PatientDrawer({
                 }}
               >
                 <View
-                  style={styles.authIconBox}
+                  style={[
+                    styles.authIconBox,
+                    {
+                      width:
+                        isVerySmallPhone
+                          ? 35
+                          : 39,
+
+                      height:
+                        isVerySmallPhone
+                          ? 35
+                          : 39,
+
+                      marginRight:
+                        isVerySmallPhone
+                          ? 7
+                          : 10,
+                    },
+                  ]}
                 >
                   <Ionicons
                     name="log-in-outline"
-                    size={20}
+                    size={
+                      isVerySmallPhone
+                        ? 18
+                        : 20
+                    }
                     color={GREEN}
                   />
                 </View>
 
-                <View style={{ flex: 1 }}>
+                <View
+                  style={
+                    styles.authTextWrap
+                  }
+                >
                   <Text
-                    style={
-                      styles.loginDrawerText
-                    }
+                    numberOfLines={1}
+                    style={[
+                      styles.loginDrawerText,
+                      {
+                        fontSize:
+                          isVerySmallPhone
+                            ? 12.5
+                            : 13.5,
+                      },
+                    ]}
                   >
                     Login
                   </Text>
 
-                  <Text style={styles.authSubtext}>
-                    Access your NeoLife account
+                  <Text
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={
+                      0.78
+                    }
+                    style={
+                      styles.authSubtext
+                    }
+                  >
+                    Access your NeoLife
+                    account
                   </Text>
                 </View>
 
@@ -446,17 +869,32 @@ export default function PatientDrawer({
               </TouchableOpacity>
             )}
 
-            {/* BOTTOM TEXT */}
+            {/* ================= BOTTOM ================= */}
 
-            <View style={styles.bottomBrand}>
+            <View
+              style={[
+                styles.bottomBrand,
+                {
+                  paddingTop:
+                    isShortPhone
+                      ? 16
+                      : 24,
+                },
+              ]}
+            >
               <Ionicons
                 name="leaf-outline"
                 size={13}
                 color={GOLD}
               />
 
-              <Text style={styles.bottomBrandText}>
-                Natural care • Better living
+              <Text
+                style={
+                  styles.bottomBrandText
+                }
+              >
+                Natural care • Better
+                living
               </Text>
             </View>
           </ScrollView>
@@ -470,301 +908,279 @@ export default function PatientDrawer({
    STYLES
 ========================================================= */
 
-const styles = StyleSheet.create({
-  /* =======================================================
-     ROOT
-  ======================================================= */
+const styles =
+  StyleSheet.create({
+    /* =========================
+       ROOT
+    ========================= */
 
-  modalRoot: {
-    flex: 1,
-    flexDirection: "row",
-  },
+    modalRoot: {
+      flex: 1,
+      flexDirection: "row",
+    },
 
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    backdrop: {
+      ...StyleSheet.absoluteFillObject,
 
-    backgroundColor:
-      "rgba(2, 24, 17, 0.60)",
-  },
+      backgroundColor:
+        "rgba(2, 24, 17, 0.60)",
+    },
 
-  /* =======================================================
-     DRAWER
-  ======================================================= */
+    /* =========================
+       DRAWER
+    ========================= */
 
-  drawer: {
-    width: "81%",
-    maxWidth: 328,
-    height: "100%",
+    drawer: {
+      height: "100%",
 
-    backgroundColor: GREEN,
-  },
+      backgroundColor: GREEN,
 
-  drawerScroll: {
-    flexGrow: 1,
+      shadowColor: "#000",
 
-    paddingTop:
-      Platform.OS === "web"
-        ? 34
-        : 64,
+      shadowOffset: {
+        width: 4,
+        height: 0,
+      },
 
-    paddingHorizontal: 17,
+      shadowOpacity: 0.18,
+      shadowRadius: 10,
 
-    paddingBottom: 26,
-  },
+      elevation: 12,
+    },
 
-  /* =======================================================
-     HEADER
-  ======================================================= */
+    drawerScroll: {
+      flexGrow: 1,
+    },
 
-  drawerHeader: {
-    marginBottom: 20,
+    /* =========================
+       HEADER
+    ========================= */
 
-    flexDirection: "row",
+    drawerHeader: {
+      flexDirection: "row",
 
-    alignItems: "flex-start",
-  },
+      alignItems: "flex-start",
+    },
 
-  brandWrap: {
-    flex: 1,
+    brandWrap: {
+      flex: 1,
+      minWidth: 0,
 
-    paddingLeft: 4,
-  },
+      paddingLeft: 4,
+    },
 
-  drawerBrand: {
-    fontFamily:
-      "PlayfairDisplay_600SemiBold",
+    drawerBrand: {
+      flexShrink: 1,
 
-    color: WHITE,
+      fontFamily:
+        "PlayfairDisplay_600SemiBold",
 
-    fontSize: 27,
+      color: WHITE,
 
-    lineHeight: 32,
+      letterSpacing: -0.3,
+    },
 
-    letterSpacing: -0.3,
-  },
+    drawerSub: {
+      marginTop: 1,
 
-  drawerSub: {
-    marginTop: 1,
+      flexShrink: 1,
 
-    fontFamily: "DMSans_500Medium",
+      fontFamily:
+        "DMSans_500Medium",
 
-    color: GOLD_LIGHT,
+      color: GOLD_LIGHT,
 
-    fontSize: 10.5,
+      letterSpacing: 0.45,
+    },
 
-    letterSpacing: 0.45,
-  },
+    closeButton: {
+      flexShrink: 0,
 
-  closeButton: {
-    width: 39,
-    height: 39,
+      alignItems: "center",
+      justifyContent: "center",
 
-    borderRadius: 13,
+      backgroundColor: WHITE,
+    },
 
-    alignItems: "center",
+    /* =========================
+       SECTION LABEL
+    ========================= */
 
-    justifyContent: "center",
+    menuLabel: {
+      marginLeft: 8,
 
-    backgroundColor: WHITE,
-  },
+      fontFamily:
+        "DMSans_700Bold",
 
-  /* =======================================================
-     SECTION LABEL
-  ======================================================= */
+      color:
+        "rgba(244,230,183,0.72)",
 
-  menuLabel: {
-    marginLeft: 8,
+      fontSize: 8.5,
 
-    marginBottom: 7,
+      letterSpacing: 1.5,
+    },
 
-    fontFamily: "DMSans_700Bold",
+    /* =========================
+       MENU
+    ========================= */
 
-    color:
-      "rgba(244,230,183,0.72)",
+    menuContainer: {},
 
-    fontSize: 8.5,
+    drawerItem: {
+      paddingHorizontal: 8,
 
-    letterSpacing: 1.5,
-  },
+      flexDirection: "row",
+      alignItems: "center",
+    },
 
-  /* =======================================================
-     MENU
-  ======================================================= */
+    drawerItemActive: {
+      backgroundColor:
+        "rgba(255,255,255,0.96)",
+    },
 
-  menuContainer: {
-    gap: 3,
-  },
+    menuIconWrap: {
+      flexShrink: 0,
 
-  drawerItem: {
-    minHeight: 52,
+      alignItems: "center",
+      justifyContent: "center",
 
-    paddingHorizontal: 8,
+      backgroundColor:
+        "rgba(255,255,255,0.055)",
+    },
 
-    borderRadius: 15,
+    menuIconWrapActive: {
+      backgroundColor:
+        "#EAF4EF",
+    },
 
-    flexDirection: "row",
+    drawerText: {
+      flex: 1,
+      minWidth: 0,
 
-    alignItems: "center",
-  },
+      fontFamily:
+        "DMSans_600SemiBold",
 
-  drawerItemActive: {
-    backgroundColor:
-      "rgba(255,255,255,0.96)",
-  },
+      color: WHITE,
+    },
 
-  menuIconWrap: {
-    width: 36,
-    height: 36,
+    drawerTextActive: {
+      fontFamily:
+        "DMSans_700Bold",
 
-    marginRight: 8,
+      color: GREEN,
+    },
 
-    borderRadius: 11,
+    arrowWrap: {
+      width: 26,
+      height: 26,
 
-    alignItems: "center",
+      flexShrink: 0,
 
-    justifyContent: "center",
+      borderRadius: 9,
 
-    backgroundColor:
-      "rgba(255,255,255,0.055)",
-  },
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
-  menuIconWrapActive: {
-    backgroundColor: "#EAF4EF",
-  },
+    arrowWrapActive: {
+      backgroundColor:
+        "#EFF6F2",
+    },
 
-  drawerText: {
-    flex: 1,
+    /* =========================
+       ACCOUNT
+    ========================= */
 
-    fontFamily:
-      "DMSans_600SemiBold",
+    authDivider: {
+      height: 1,
 
-    color: WHITE,
+      backgroundColor:
+        "rgba(255,255,255,0.14)",
+    },
 
-    fontSize: 13.5,
+    authDrawerItem: {
+      paddingHorizontal: 8,
+      paddingVertical: 6,
 
-    lineHeight: 18,
-  },
+      borderRadius: 16,
 
-  drawerTextActive: {
-    fontFamily:
-      "DMSans_700Bold",
+      flexDirection: "row",
+      alignItems: "center",
 
-    color: GREEN,
-  },
+      backgroundColor:
+        "rgba(255,255,255,0.045)",
+    },
 
-  arrowWrap: {
-    width: 26,
-    height: 26,
+    authIconBox: {
+      flexShrink: 0,
 
-    borderRadius: 9,
+      borderRadius: 12,
 
-    alignItems: "center",
+      alignItems: "center",
+      justifyContent: "center",
 
-    justifyContent: "center",
-  },
+      backgroundColor: WHITE,
+    },
 
-  arrowWrapActive: {
-    backgroundColor: "#EFF6F2",
-  },
+    authTextWrap: {
+      flex: 1,
+      minWidth: 0,
+    },
 
-  /* =======================================================
-     AUTH
-  ======================================================= */
+    loginDrawerText: {
+      fontFamily:
+        "DMSans_700Bold",
 
-  authDivider: {
-    height: 1,
+      color: WHITE,
+    },
 
-    marginTop: 17,
-    marginBottom: 14,
+    logoutDrawerText: {
+      fontFamily:
+        "DMSans_700Bold",
 
-    backgroundColor:
-      "rgba(255,255,255,0.14)",
-  },
+      color: DANGER,
+    },
 
-  authDrawerItem: {
-    minHeight: 61,
+    authSubtext: {
+      marginTop: 2,
 
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+      flexShrink: 1,
 
-    borderRadius: 16,
+      fontFamily:
+        "DMSans_400Regular",
 
-    flexDirection: "row",
+      color: MUTED,
 
-    alignItems: "center",
+      fontSize: 9.5,
+    },
 
-    backgroundColor:
-      "rgba(255,255,255,0.045)",
-  },
+    /* =========================
+       BOTTOM
+    ========================= */
 
-  authIconBox: {
-    width: 39,
-    height: 39,
+    bottomBrand: {
+      marginTop: "auto",
 
-    marginRight: 10,
+      flexDirection: "row",
+      flexWrap: "wrap",
 
-    borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
 
-    alignItems: "center",
+      gap: 5,
+    },
 
-    justifyContent: "center",
+    bottomBrandText: {
+      flexShrink: 1,
 
-    backgroundColor: WHITE,
-  },
+      fontFamily:
+        "DMSans_500Medium",
 
-  loginDrawerText: {
-    fontFamily:
-      "DMSans_700Bold",
+      color:
+        "rgba(255,255,255,0.48)",
 
-    color: WHITE,
+      fontSize: 9.5,
 
-    fontSize: 13.5,
-  },
-
-  logoutDrawerText: {
-    fontFamily:
-      "DMSans_700Bold",
-
-    color: DANGER,
-
-    fontSize: 13.5,
-  },
-
-  authSubtext: {
-    marginTop: 2,
-
-    fontFamily:
-      "DMSans_400Regular",
-
-    color: MUTED,
-
-    fontSize: 9.5,
-  },
-
-  /* =======================================================
-     BOTTOM
-  ======================================================= */
-
-  bottomBrand: {
-    marginTop: "auto",
-    paddingTop: 24,
-
-    flexDirection: "row",
-
-    alignItems: "center",
-
-    justifyContent: "center",
-
-    gap: 5,
-  },
-
-  bottomBrandText: {
-    fontFamily:
-      "DMSans_500Medium",
-
-    color:
-      "rgba(255,255,255,0.48)",
-
-    fontSize: 9.5,
-  },
-});
+      textAlign: "center",
+    },
+  });

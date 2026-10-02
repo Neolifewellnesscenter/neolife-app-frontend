@@ -1,26 +1,39 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+
 import {
   DMSans_400Regular,
   DMSans_500Medium,
   DMSans_700Bold,
   useFonts as useDMSans,
 } from "@expo-google-fonts/dm-sans";
+
 import {
   PlayfairDisplay_700Bold,
   useFonts as usePlayfair,
 } from "@expo-google-fonts/playfair-display";
+
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import React, { useCallback, useState } from "react";
+
+import React, {
+  useCallback,
+  useState,
+} from "react";
+
 import {
   Image,
   Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
+
+/* =========================================================
+   COLORS
+========================================================= */
 
 const GREEN = "#0B3D2E";
 const DEEP_GREEN = "#083629";
@@ -29,14 +42,116 @@ const WHITE = "#FFFFFF";
 const MUTED = "#758178";
 const BORDER = "#E7ECE9";
 
+/* =========================================================
+   TYPES
+========================================================= */
+
 type PatientHeaderProps = {
   onMenuPress: () => void;
 };
 
+/* =========================================================
+   COMPONENT
+========================================================= */
+
 export default function PatientHeader({
   onMenuPress,
 }: PatientHeaderProps) {
-  const [profileLetter, setProfileLetter] = useState("");
+  const [profileLetter, setProfileLetter] =
+    useState("");
+  const [userRole, setUserRole] =
+    useState("");
+  const [isLoggedIn, setIsLoggedIn] =
+    useState(false);
+
+  const { width } = useWindowDimensions();
+
+  /* =======================================================
+     RESPONSIVE BREAKPOINTS
+  ======================================================= */
+
+  const isVerySmallPhone = width <= 340;
+  const isSmallPhone =
+    width > 340 && width < 375;
+  const isNormalPhone =
+    width >= 375 && width < 430;
+  const isLargePhone = width >= 430;
+
+  /* =======================================================
+     RESPONSIVE SIZES
+  ======================================================= */
+
+  const sideButtonSize = isVerySmallPhone
+    ? 38
+    : isSmallPhone
+      ? 40
+      : isLargePhone
+        ? 46
+        : 44;
+
+  const sideButtonRadius = isVerySmallPhone
+    ? 12
+    : isSmallPhone
+      ? 13
+      : 14;
+
+  const logoSize = isVerySmallPhone
+    ? 36
+    : isSmallPhone
+      ? 39
+      : isLargePhone
+        ? 46
+        : 44;
+
+  const brandNameSize = isVerySmallPhone
+    ? 16
+    : isSmallPhone
+      ? 18
+      : isLargePhone
+        ? 21
+        : 20;
+
+  const brandSubSize = isVerySmallPhone
+    ? 8
+    : isSmallPhone
+      ? 9
+      : isLargePhone
+        ? 10.5
+        : 10;
+
+  const horizontalPadding =
+    isVerySmallPhone
+      ? 8
+      : isSmallPhone
+        ? 10
+        : isLargePhone
+          ? 16
+          : 14;
+
+  const brandLeftMargin =
+    isVerySmallPhone
+      ? 6
+      : isSmallPhone
+        ? 8
+        : 12;
+
+  const brandRightMargin =
+    isVerySmallPhone
+      ? 5
+      : isSmallPhone
+        ? 7
+        : 10;
+
+  const brandTextMargin =
+    isVerySmallPhone
+      ? 6
+      : isSmallPhone
+        ? 8
+        : 10;
+
+  /* =======================================================
+     FONTS
+  ======================================================= */
 
   const [dmLoaded] = useDMSans({
     DMSans_400Regular,
@@ -48,6 +163,10 @@ export default function PatientHeader({
     PlayfairDisplay_700Bold,
   });
 
+  /* =======================================================
+     PROFILE
+  ======================================================= */
+
   useFocusEffect(
     useCallback(() => {
       loadProfileLetter();
@@ -56,107 +175,330 @@ export default function PatientHeader({
 
   async function loadProfileLetter() {
     try {
-      const token =
-        (await AsyncStorage.getItem("token")) ||
-        (await AsyncStorage.getItem("accessToken")) ||
-        "";
+      const [
+        token,
+        accessToken,
+        doctorToken,
+        role,
+        savedName,
+        userName,
+        doctorName,
+        savedEmail,
+      ] = await Promise.all([
+        AsyncStorage.getItem("token"),
+        AsyncStorage.getItem("accessToken"),
+        AsyncStorage.getItem("doctorToken"),
+        AsyncStorage.getItem("role"),
+        AsyncStorage.getItem("name"),
+        AsyncStorage.getItem("userName"),
+        AsyncStorage.getItem("doctorName"),
+        AsyncStorage.getItem("email"),
+      ]);
 
-      if (!token) {
+      const normalizedRole = (role || "")
+        .replace(/^ROLE_/i, "")
+        .trim()
+        .toUpperCase();
+
+      const activeToken =
+        normalizedRole === "DOCTOR"
+          ? doctorToken || token || accessToken
+          : token || accessToken || doctorToken;
+
+      if (!activeToken) {
+        setIsLoggedIn(false);
+        setUserRole("");
         setProfileLetter("");
         return;
       }
 
-      const savedName =
-        (await AsyncStorage.getItem("name")) ||
-        (await AsyncStorage.getItem("userName")) ||
-        "";
+      setIsLoggedIn(true);
+      setUserRole(normalizedRole);
 
-      const savedEmail =
-        (await AsyncStorage.getItem("email")) || "";
+      const displayValue =
+        (normalizedRole === "DOCTOR" ? doctorName : "")?.trim() ||
+        savedName?.trim() ||
+        userName?.trim() ||
+        savedEmail?.trim() ||
+        (normalizedRole === "DOCTOR" ? "Doctor" : "");
 
-      const value =
-        savedName.trim() ||
-        savedEmail.trim();
-
-      setProfileLetter(
-        value.charAt(0).toUpperCase()
-      );
-    } catch {
+      setProfileLetter(displayValue.charAt(0).toUpperCase());
+    } catch (error) {
+      console.log("Header session check failed:", error);
+      setIsLoggedIn(false);
+      setUserRole("");
       setProfileLetter("");
     }
   }
 
   function handleProfilePress() {
-    if (profileLetter) {
-      router.push("/profile" as any);
-    } else {
+    if (!isLoggedIn) {
       router.push("/login" as any);
+      return;
+    }
+
+    switch (userRole) {
+      case "DOCTOR":
+        router.push("/doctor/profile" as any);
+        return;
+
+      case "USER":
+      case "PATIENT":
+        router.push("/profile" as any);
+        return;
+
+      case "THERAPIST":
+        router.push("/therapist/profile" as any);
+        return;
+
+      default:
+        router.push("/login" as any);
     }
   }
 
+  /* =======================================================
+     FONT LOADING PLACEHOLDER
+  ======================================================= */
+
   if (!dmLoaded || !playfairLoaded) {
     return (
-      <View style={styles.headerPlaceholder} />
+      <View
+        style={[
+          styles.headerPlaceholder,
+          {
+            minHeight:
+              Platform.OS === "web"
+                ? 70
+                : isVerySmallPhone ||
+                    isSmallPhone
+                  ? 86
+                  : 92,
+          },
+        ]}
+      />
     );
   }
 
+  /* =======================================================
+     UI
+  ======================================================= */
+
   return (
-    <View style={styles.header}>
-      {/* MENU */}
+    <View
+      style={[
+        styles.header,
+        {
+          minHeight:
+            Platform.OS === "web"
+              ? 70
+              : isVerySmallPhone ||
+                  isSmallPhone
+                ? 86
+                : 92,
+
+          paddingTop:
+            Platform.OS === "web"
+              ? 8
+              : isVerySmallPhone
+                ? 34
+                : isSmallPhone
+                  ? 35
+                  : 39,
+
+          paddingHorizontal:
+            horizontalPadding,
+        },
+      ]}
+    >
+      {/* ================= MENU ================= */}
+
       <TouchableOpacity
-        style={styles.menuButton}
+        style={[
+          styles.menuButton,
+          {
+            width: sideButtonSize,
+            height: sideButtonSize,
+            borderRadius:
+              sideButtonRadius,
+          },
+        ]}
         activeOpacity={0.7}
         onPress={onMenuPress}
       >
         <Ionicons
           name="menu-outline"
-          size={26}
+          size={
+            isVerySmallPhone
+              ? 22
+              : isSmallPhone
+                ? 24
+                : 26
+          }
           color={GREEN}
         />
       </TouchableOpacity>
 
-      {/* BRAND */}
+      {/* ================= BRAND ================= */}
+
       <TouchableOpacity
-        style={styles.brandWrap}
+        style={[
+          styles.brandWrap,
+          {
+            marginLeft:
+              brandLeftMargin,
+
+            marginRight:
+              brandRightMargin,
+          },
+        ]}
         activeOpacity={0.82}
         onPress={() =>
-          router.replace("/(tabs)" as any)
+          router.replace(
+            "/(tabs)" as any
+          )
         }
       >
+        {/* LOGO */}
+
         <Image
-          source={require("../assets/images/main_logo.jpeg")}
-          style={styles.logo}
+          source={require(
+            "../assets/images/main_logo.jpeg"
+          )}
+          style={[
+            styles.logo,
+            {
+              width: logoSize,
+              height: logoSize,
+              borderRadius:
+                logoSize / 2,
+            },
+          ]}
         />
 
-        <View style={styles.brandTextWrap}>
-          <Text style={styles.brandName}>
-            NeoLife
+        {/* BRAND TEXT */}
+
+        <View
+          style={[
+            styles.brandTextWrap,
+            {
+              marginLeft:
+                brandTextMargin,
+            },
+          ]}
+        >
+          <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.82}
+            style={[
+              styles.brandName,
+              {
+                fontSize:
+                  brandNameSize,
+
+                lineHeight:
+                  brandNameSize + 3,
+              },
+            ]}
+          >
+            Neolife
           </Text>
 
-          <View style={styles.brandBottomRow}>
-            <View style={styles.brandLine} />
+          <View
+            style={
+              styles.brandBottomRow
+            }
+          >
+            {!isVerySmallPhone && (
+              <View
+                style={[
+                  styles.brandLine,
+                  {
+                    width:
+                      isSmallPhone
+                        ? 10
+                        : 14,
 
-            <Text style={styles.brandSub}>
+                    marginRight:
+                      isSmallPhone
+                        ? 4
+                        : 6,
+                  },
+                ]}
+              />
+            )}
+
+            <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.68}
+              style={[
+                styles.brandSub,
+                {
+                  fontSize:
+                    brandSubSize,
+
+                  lineHeight:
+                    brandSubSize + 3,
+
+                  letterSpacing:
+                    isVerySmallPhone
+                      ? 0.2
+                      : isSmallPhone
+                        ? 0.4
+                        : 0.65,
+                },
+              ]}
+            >
               Wellness Center
             </Text>
           </View>
         </View>
       </TouchableOpacity>
 
-      {/* PROFILE */}
+      {/* ================= PROFILE ================= */}
+
       <TouchableOpacity
-        style={styles.profileButton}
+        style={[
+          styles.profileButton,
+          {
+            width: sideButtonSize,
+            height: sideButtonSize,
+            borderRadius:
+              sideButtonRadius,
+          },
+        ]}
         activeOpacity={0.76}
-        onPress={handleProfilePress}
+        onPress={
+          handleProfilePress
+        }
       >
         {profileLetter ? (
-          <Text style={styles.profileLetter}>
+          <Text
+            style={[
+              styles.profileLetter,
+              {
+                fontSize:
+                  isVerySmallPhone
+                    ? 14
+                    : isSmallPhone
+                      ? 15
+                      : 16,
+              },
+            ]}
+          >
             {profileLetter}
           </Text>
         ) : (
           <Ionicons
             name="person-outline"
-            size={19}
+            size={
+              isVerySmallPhone
+                ? 16
+                : isSmallPhone
+                  ? 18
+                  : 19
+            }
             color={WHITE}
           />
         )}
@@ -165,152 +507,165 @@ export default function PatientHeader({
   );
 }
 
-const styles = StyleSheet.create({
-  headerPlaceholder: {
-    height:
-      Platform.OS === "web" ? 70 : 92,
-    backgroundColor: WHITE,
-  },
+/* =========================================================
+   STYLES
+========================================================= */
 
-  header: {
-    minHeight:
-      Platform.OS === "web" ? 70 : 92,
+const styles =
+  StyleSheet.create({
+    /* =========================
+       PLACEHOLDER
+    ========================= */
 
-    paddingTop:
-      Platform.OS === "web" ? 8 : 39,
-
-    paddingBottom: 9,
-    paddingHorizontal: 14,
-
-    flexDirection: "row",
-    alignItems: "center",
-
-    backgroundColor: WHITE,
-
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
-
-    shadowColor: "#0B3D2E",
-    shadowOffset: {
-      width: 0,
-      height: 2,
+    headerPlaceholder: {
+      width: "100%",
+      backgroundColor: WHITE,
     },
-    shadowOpacity: 0.035,
-    shadowRadius: 5,
 
-    elevation: 2,
+    /* =========================
+       HEADER
+    ========================= */
 
-    zIndex: 100,
-  },
+    header: {
+      width: "100%",
 
-  menuButton: {
-    width: 44,
-    height: 44,
+      paddingBottom: 9,
 
-    borderRadius: 14,
+      flexDirection: "row",
+      alignItems: "center",
 
-    alignItems: "center",
-    justifyContent: "center",
+      backgroundColor: WHITE,
 
-    backgroundColor: MINT,
-  },
+      borderBottomWidth: 1,
+      borderBottomColor: BORDER,
 
-  brandWrap: {
-    flex: 1,
+      shadowColor: "#0B3D2E",
 
-    marginLeft: 12,
-    marginRight: 10,
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
 
-    flexDirection: "row",
-    alignItems: "center",
-  },
+      shadowOpacity: 0.035,
+      shadowRadius: 5,
 
-  logo: {
-    width: 44,
-    height: 44,
+      elevation: 2,
 
-    borderRadius: 22,
-
-    borderWidth: 1,
-    borderColor: "#E0E8E3",
-
-    backgroundColor: "#F7FAF8",
-  },
-
-  brandTextWrap: {
-    flex: 1,
-
-    marginLeft: 10,
-
-    justifyContent: "center",
-  },
-
-  brandName: {
-    fontFamily: "PlayfairDisplay_700Bold",
-
-    color: DEEP_GREEN,
-
-    fontSize: 20,
-    lineHeight: 22,
-
-    letterSpacing: 0.1,
-  },
-
-  brandBottomRow: {
-    marginTop: 2,
-
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  brandLine: {
-    width: 14,
-    height: 1,
-
-    marginRight: 6,
-
-    backgroundColor: "#CBB06B",
-  },
-
-  brandSub: {
-    fontFamily: "DMSans_500Medium",
-
-    color: MUTED,
-
-    fontSize: 10,
-    lineHeight: 13,
-
-    letterSpacing: 0.65,
-  },
-
-  profileButton: {
-    width: 44,
-    height: 44,
-
-    borderRadius: 14,
-
-    alignItems: "center",
-    justifyContent: "center",
-
-    backgroundColor: DEEP_GREEN,
-
-    shadowColor: DEEP_GREEN,
-    shadowOffset: {
-      width: 0,
-      height: 3,
+      zIndex: 100,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
 
-    elevation: 2,
-  },
+    /* =========================
+       MENU
+    ========================= */
 
-  profileLetter: {
-    fontFamily: "PlayfairDisplay_700Bold",
+    menuButton: {
+      flexShrink: 0,
 
-    color: WHITE,
+      alignItems: "center",
+      justifyContent: "center",
 
-    fontSize: 16,
-    lineHeight: 20,
-  },
-});
+      backgroundColor: MINT,
+    },
+
+    /* =========================
+       BRAND
+    ========================= */
+
+    brandWrap: {
+      flex: 1,
+      minWidth: 0,
+
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    logo: {
+      flexShrink: 0,
+
+      borderWidth: 1,
+      borderColor: "#E0E8E3",
+
+      backgroundColor: "#F7FAF8",
+    },
+
+    brandTextWrap: {
+      flex: 1,
+      minWidth: 0,
+
+      justifyContent: "center",
+    },
+
+    brandName: {
+      flexShrink: 1,
+
+      fontFamily:
+        "PlayfairDisplay_700Bold",
+
+      color: DEEP_GREEN,
+
+      letterSpacing: 0.1,
+    },
+
+    brandBottomRow: {
+      marginTop: 2,
+
+      minWidth: 0,
+
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    brandLine: {
+      height: 1,
+
+      flexShrink: 0,
+
+      backgroundColor:
+        "#CBB06B",
+    },
+
+    brandSub: {
+      flexShrink: 1,
+
+      fontFamily:
+        "DMSans_500Medium",
+
+      color: MUTED,
+    },
+
+    /* =========================
+       PROFILE
+    ========================= */
+
+    profileButton: {
+      flexShrink: 0,
+
+      alignItems: "center",
+      justifyContent: "center",
+
+      backgroundColor:
+        DEEP_GREEN,
+
+      shadowColor:
+        DEEP_GREEN,
+
+      shadowOffset: {
+        width: 0,
+        height: 3,
+      },
+
+      shadowOpacity: 0.1,
+      shadowRadius: 5,
+
+      elevation: 2,
+    },
+
+    profileLetter: {
+      fontFamily:
+        "PlayfairDisplay_700Bold",
+
+      color: WHITE,
+
+      lineHeight: 20,
+    },
+  });
